@@ -71,8 +71,11 @@ def inspect(folder, write_json=True):
     if any("Servo" in f or "One-shot" in f or "AI" in f for f in fm):
         warnings.append(f"autofocus was on ({fm}); every frame may refocus. Use MF.")
     fd = distinct("FocusDistanceUpper")
+    skip = []
     if len(fd) > 1:
-        warnings.append(f"focus distance changes between frames: {fd[:6]} (refocusing?)")
+        far = max(fd, key=lambda v: 1e9 if v == "inf" else float(v.split()[0]))     # the infinity setting
+        skip = [i + 1 for i, r in enumerate(rows) if r["FocusDistanceUpper"] != far]
+        warnings.append(f"focus distance changes between frames: {fd[:6]}; {len(skip)} frames are not at {far} and go in --skip")
     if "CRAW" in distinct("Quality"):
         warnings.append("CRAW: lossy raw, shadow artefacts when stretched. Use RAW.")
     if any(int(r["ISO"]) < 640 for r in rows):
@@ -131,6 +134,8 @@ def new(args):
     if args.auto or args.first is None:
         rep = inspect(args.folder, write_json=True)
         first, last = rep["first"], rep["last"]
+        if rep["skip"] and not args.skip:
+            args.skip = ",".join(map(str, rep["skip"]))
     else:
         first, last = args.first, args.last
     cmd = [sys.executable, os.path.join(HERE, "newproject.py"), args.workdir, args.name, args.folder, str(first), str(last)]
