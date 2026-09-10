@@ -25,7 +25,7 @@ def one(i):
 
 
 if __name__ == "__main__":
-    with Pool(3) as p:
+    with Pool(max(2, (os.cpu_count() or 4) // 2)) as p:                    # LibRaw is single-threaded; ~1.2 GB per worker
         for i in p.imap_unordered(one, range(1, P.N + 1)):
             print(i, end=" ", flush=True)
     print("\ndecoded", P.N, "frames", f"({P.WIDTH}x{P.HEIGHT}, {cfg.get('orientation', 'Horizontal (normal)')})", flush=True)
