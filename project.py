@@ -16,7 +16,9 @@ project.json:
 """
 import os, json
 
-W = os.environ.get("ASTRO_WORK", r"D:\AstroWork\nhlake")
+W = os.environ.get("ASTRO_WORK")
+if not W:
+    raise SystemExit("set ASTRO_WORK to the project directory (holds project.json)")
 _cfg = json.load(open(os.path.join(W, "project.json")))
 NAME = _cfg["name"]
 WIDTH, HEIGHT = int(_cfg["width"]), int(_cfg["height"])
