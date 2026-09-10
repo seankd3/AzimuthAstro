@@ -1,0 +1,14 @@
+"""Traffic map still: the finished composite with every streak of the night lightened onto the sky."""
+import numpy as np
+from PIL import Image
+import render as Rn
+W = Rn.W
+acc = np.load(f"{W}/traffic_max.npy")
+lin = np.load(f"{W}/composite_lin.npy")
+mask = np.load(f"{W}/mask_sky_d.npy")
+acc[:, ~mask] = 0
+out = np.maximum(lin, lin + acc)                  # additive where something moved: streaks keep their colour
+img = Rn.to_display(Rn.Tone().apply(out))
+Image.fromarray(img).save(f"{W}/{Rn.NAME}_Traffic.jpg", quality=94)
+Image.fromarray(img[::4, ::4]).save(f"{W}/preview_traffic_small.jpg", quality=90)
+print("ok")

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.fit
+*.fits
+*.npy
+*.npz
+*.tif
+*.jpg
+*.png
+*.mp4
+*.log
+*.ssf
+*.ini
+*.wcs
+project.json
