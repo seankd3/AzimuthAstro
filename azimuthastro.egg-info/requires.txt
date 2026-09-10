@@ -1,8 +1,0 @@
-numpy
-scipy
-astropy
-opencv-python
-tifffile
-pillow
-lensfunpy
-rawpy

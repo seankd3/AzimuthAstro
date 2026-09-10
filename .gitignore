@@ -13,3 +13,7 @@ __pycache__/
 *.ini
 *.wcs
 project.json
+
+# build
+azimuthastro.egg-info/
+__pycache__/
