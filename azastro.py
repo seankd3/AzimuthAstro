@@ -2,7 +2,8 @@
 
   azastro inspect <cr3_folder>                 report the session: settings drift, cadence, fog/clouds, test frames
   azastro new <workdir> <name> <cr3_folder> [--first N --last M --skip a,b] [--pole x,y] [--skyrows r] [--auto]
-  azastro run <workdir> [--from STAGE] [--to STAGE]
+  azastro run <workdir> [--from STAGE] [--to STAGE] [--mood-frame N] [--force] [--detach]
+  azastro process <workdir> <name> <cr3_folder> [--mood-frame N]     inspect + new --auto + run --detach: a whole night
   azastro status <workdir>
   azastro deliver <workdir>
 
@@ -404,11 +405,16 @@ def main():
     p.add_argument("--detach", action="store_true", help="run in a detached process and return")
     p = sub.add_parser("status"); p.add_argument("workdir")
     p = sub.add_parser("deliver"); p.add_argument("workdir")
+    p = sub.add_parser("process", help="the whole night in one go: inspect, new --auto, run --detach")
+    p.add_argument("workdir"); p.add_argument("name"); p.add_argument("folder"); p.add_argument("--mood-frame", type=int, default=1)
     a = ap.parse_args()
     if a.cmd == "inspect":
         inspect(a.folder)
     elif a.cmd == "new":
         new(a)
+    elif a.cmd == "process":
+        new(argparse.Namespace(workdir=a.workdir, name=a.name, folder=a.folder, first=None, last=None, skip="", pole=None, skyrows=None, auto=True))
+        run(argparse.Namespace(workdir=a.workdir, frm="convert", to="deliver", mood_frame=a.mood_frame, force=False, detach=True))
     elif a.cmd == "run":
         run(a)
     elif a.cmd == "status":

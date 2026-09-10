@@ -21,11 +21,15 @@ stacking in row bands, so a night of any length fits in memory.
 ## Use
 
 ```bash
+python azastro.py process D:/AstroWork/mysky NightName "D:/Pictures/.../lights"   # the whole night, one command
 python azastro.py inspect "D:/Pictures/.../lights"      # settings drift, cadence, test frames, fog, cloud dips
 python azastro.py new D:/AstroWork/mysky NightName "D:/Pictures/.../lights" --auto
 python azastro.py run D:/AstroWork/mysky                 # every stage; --from/--to to resume or stop early
 python azastro.py status D:/AstroWork/mysky
 ```
+
+`pip install -e .` puts an `azastro` command on the path (editable install: the stages are scripts
+that live beside the CLI).
 
 `inspect` reads only EXIF and the embedded previews (no raw decode), so it takes a few minutes for
 600 frames and needs nothing but exiftool. It flags what has bitten before: autofocus left on,

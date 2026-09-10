@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: azimuthastro
+Version: 0.1.0
+Summary: Untracked wide-field nightscape stacking: stars over a frozen ground, trails, timelapses
+Requires-Python: >=3.11
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: astropy
+Requires-Dist: opencv-python
+Requires-Dist: tifffile
+Requires-Dist: pillow
+Requires-Dist: lensfunpy
+Requires-Dist: rawpy

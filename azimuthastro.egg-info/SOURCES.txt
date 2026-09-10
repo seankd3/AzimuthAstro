@@ -1,0 +1,9 @@
+README.md
+azastro.py
+pyproject.toml
+azimuthastro.egg-info/PKG-INFO
+azimuthastro.egg-info/SOURCES.txt
+azimuthastro.egg-info/dependency_links.txt
+azimuthastro.egg-info/entry_points.txt
+azimuthastro.egg-info/requires.txt
+azimuthastro.egg-info/top_level.txt
