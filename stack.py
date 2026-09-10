@@ -6,23 +6,23 @@ no-data (blanked ground, cloud, warp rim) and never take part. Writes a 32-bit f
                                                        stack.py r2_sky sky sigma
 sigma: mean of the frames within 3 robust sigmas of the per-pixel median (two passes).
 """
-import sys, glob, warnings, numpy as np
+import sys, os, glob, warnings, numpy as np
 from astropy.io import fits
+from multiprocessing import Pool
 import project as P
 
 warnings.filterwarnings("ignore", "All-NaN")                                # a pixel no frame covers is simply 0
 prefix, out, mode = sys.argv[1:4]
 files = sorted(glob.glob(f"{P.W}/{prefix}_[0-9]*.fit"))
-hdus = [fits.open(f, memmap=True, do_not_scale_image_data=True) for f in files]
-shape = hdus[0][0].data.shape
 BYTES = 3e8                                                                  # per band, all frames in float32
 
 
-def band(h, r0, r1):
-    d = h[0].data[:, r0:r1, :].astype(np.float32)
-    hd = h[0].header
-    if hd["BITPIX"] == 16:
-        d = (d * hd.get("BSCALE", 1) + hd.get("BZERO", 0)) / 65535.0
+def band(f, r0, r1):
+    with fits.open(f, memmap=True, do_not_scale_image_data=True) as h:
+        d = h[0].data[:, r0:r1, :].astype(np.float32)
+        hd = h[0].header
+        if hd["BITPIX"] == 16:
+            d = (d * hd.get("BSCALE", 1) + hd.get("BZERO", 0)) / 65535.0
     return d
 
 
@@ -44,11 +44,21 @@ def sigma(x, k=3.0):
     return np.nan_to_num(m)
 
 
-result = np.zeros(shape, np.float32)
-B = max(4, int(BYTES // (len(files) * shape[0] * shape[2] * 4)))
-for r0 in range(0, shape[1], B):
-    x = np.stack([band(h, r0, r0 + B) for h in hdus])                       # (N, 3, rows, W)
-    result[:, r0:r0 + B] = median(x) if mode == "median" else sigma(x)
-    print(f"{min(r0 + B, shape[1])}/{shape[1]}", end=" ", flush=True)
-fits.PrimaryHDU(result).writeto(f"{P.W}/{out}.fit", overwrite=True)
-print(f"\n{out}: {len(files)} frames, {mode}, covered {(result[1] > 0).mean():.3f}", flush=True)
+def one(rows):
+    r0, r1 = rows
+    x = np.stack([band(f, r0, r1) for f in files])                          # (N, 3, rows, W)
+    return r0, (median(x) if mode == "median" else sigma(x))
+
+
+if __name__ == "__main__":
+    shape = fits.getheader(files[0])
+    shape = (shape["NAXIS3"], shape["NAXIS2"], shape["NAXIS1"])
+    B = max(4, int(BYTES // (len(files) * shape[0] * shape[2] * 4)))
+    bands = [(r0, min(r0 + B, shape[1])) for r0 in range(0, shape[1], B)]
+    result = np.zeros(shape, np.float32)
+    with Pool(max(2, (os.cpu_count() or 4) // 4)) as p:                     # each worker holds one band of every frame
+        for k, (r0, res) in enumerate(p.imap_unordered(one, bands)):
+            result[:, r0:r0 + res.shape[1]] = res
+            print(f"{k + 1}/{len(bands)}", end=" ", flush=True)
+    fits.PrimaryHDU(result).writeto(f"{P.W}/{out}.fit", overwrite=True)
+    print(f"\n{out}: {len(files)} frames, {mode}, covered {(result[1] > 0).mean():.3f}", flush=True)
