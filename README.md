@@ -20,9 +20,17 @@ ASTAP with a star database, exiftool, ffmpeg.
 ## Use
 
 ```bash
-python newproject.py D:/AstroWork/mysky NightName "D:/Pictures/.../lights" 4 147 --pole 2757,3615 --skyrows 5800
-ASTRO_WORK=D:/AstroWork/mysky bash run_project.sh            # or: run_project.sh <stage> to resume
+python azastro.py inspect "D:/Pictures/.../lights"      # settings drift, cadence, test frames, fog, cloud dips
+python azastro.py new D:/AstroWork/mysky NightName "D:/Pictures/.../lights" --auto --pole 2757,3615 --skyrows 5800
+python azastro.py run D:/AstroWork/mysky                 # every stage; --from/--to to resume or stop early
+python azastro.py status D:/AstroWork/mysky
 ```
+
+`inspect` reads only EXIF and the embedded previews (no raw decode), so it takes a few minutes for
+600 frames and needs nothing but exiftool. It flags what has bitten before: autofocus left on,
+CRAW, mechanical or full-electronic shutter, ISO below 640, LENR, a poor duty cycle, and it
+finds the test frames (irregular timing) and where fog took the star count down. `new --auto`
+uses its frame selection directly.
 
 `newproject.py` takes the CR3 folder and the 1-based first/last positions to use (drop test frames
 and fog), reads exposure, timestamps, orientation and white balance from EXIF, and writes
