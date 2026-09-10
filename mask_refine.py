@@ -14,7 +14,8 @@ import project as P
 W = P.W
 OUT = 120            # px outside the coarse sky (the coarse mask rounds concavities off by up to ~100 px)
 IN = 10              # px inside it
-SIG = 30             # px scale of the local level estimates
+SIG = 30             # px scale of the local tree level
+SIG_SKY = 200        # px scale of the local sky level
 DEEP = 25            # px: how far inside each region the level samples come from
 
 
@@ -37,7 +38,7 @@ def main():
     cs = coarse[::S, ::S]
     sky_far = ndi.binary_erosion(cs, iterations=DEEP // S).astype(np.float32)
     tree_far = ndi.binary_erosion(~cs, iterations=DEEP // S).astype(np.float32)
-    sky_lvl, sky_w = nc(Ls, sky_far, SIG / S)
+    sky_lvl, sky_w = nc(Ls, sky_far, SIG_SKY / S)      # sky brightness varies slowly: reach far into pockets
     tree_lvl, tree_w = nc(Ls, tree_far, SIG / S)
     up = lambda a: cv2.resize(a.astype(np.float32), (Wd, H), interpolation=cv2.INTER_LINEAR)
     sky_lvl, tree_lvl, sky_w, tree_w = up(sky_lvl), up(tree_lvl), up(sky_w), up(tree_w)
@@ -49,7 +50,7 @@ def main():
     closer_sky = np.where(two_sided, np.abs(Lm - sky_lvl) < np.abs(Lm - tree_lvl),   # between the two levels
                           np.abs(Lm - sky_lvl) < 5 * noise)                            # no tree nearby: sky-only test
     refined = coarse.copy()
-    band = edge & (sky_w > 0.02) & (two_sided | ~near_tree)
+    band = edge & (two_sided | ~near_tree)
     refined[band] = closer_sky[band]
     # star trails prove sky: the mean stack carries trail residue the median does not
     trail = (mean[1] - med[1]) * 65535 > 6 * noise
