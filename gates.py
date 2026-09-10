@@ -16,15 +16,18 @@ def _sky_lum():
 
 def convert():
     """orientation: the top third of frame 1 must be sky-bright relative to the bottom third (lake/ground
-    is darker than sky at night); hot pixels must be rare."""
+    is darker than sky at night)."""
     d = fits.getdata(P.full(1)).astype(np.float32)[1]
     H = d.shape[0]
     top, bottom = np.median(d[-H // 3:]), np.median(d[: H // 3])          # FITS rows run bottom-up
-    ok1 = top > bottom
-    hot = np.load(f"{W}/hot_mask.npy")
-    frac = hot.mean()
-    ok2 = frac < 0.002
-    return ok1 and ok2, f"top/bottom median {top:.0f}/{bottom:.0f} ({'sky up' if ok1 else 'UPSIDE DOWN?'}); hot pixels {frac*100:.3f}% ({'ok' if ok2 else 'too many: threshold misfire'})"
+    ok = top > bottom
+    return ok, f"top/bottom median {top:.0f}/{bottom:.0f} ({'sky up' if ok else 'UPSIDE DOWN?'})"
+
+
+def hot():
+    """hot pixels must be rare (a fixed threshold once flagged 58% of an ISO 3200 frame)."""
+    frac = np.load(f"{W}/hot_mask.npy").mean()
+    return frac < 0.002, f"hot pixels {frac*100:.3f}% ({'ok' if frac < 0.002 else 'too many: threshold misfire'})"
 
 
 def refine():
@@ -69,7 +72,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "refine": refine, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):

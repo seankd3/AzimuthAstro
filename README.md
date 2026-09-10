@@ -21,7 +21,7 @@ ASTAP with a star database, exiftool, ffmpeg.
 
 ```bash
 python azastro.py inspect "D:/Pictures/.../lights"      # settings drift, cadence, test frames, fog, cloud dips
-python azastro.py new D:/AstroWork/mysky NightName "D:/Pictures/.../lights" --auto --pole 2757,3615 --skyrows 5800
+python azastro.py new D:/AstroWork/mysky NightName "D:/Pictures/.../lights" --auto
 python azastro.py run D:/AstroWork/mysky                 # every stage; --from/--to to resume or stop early
 python azastro.py status D:/AstroWork/mysky
 ```
@@ -29,15 +29,19 @@ python azastro.py status D:/AstroWork/mysky
 `inspect` reads only EXIF and the embedded previews (no raw decode), so it takes a few minutes for
 600 frames and needs nothing but exiftool. It flags what has bitten before: autofocus left on,
 CRAW, mechanical or full-electronic shutter, ISO below 640, LENR, a poor duty cycle, and it
-finds the test frames (irregular timing) and where fog took the star count down. `new --auto`
-uses its frame selection directly.
+finds the test frames (irregular timing) and where fog took the star count down. It also finds
+the celestial pole: between two previews the sky has turned by an angle the clock gives, and on a
+wide lens that motion is the pinhole homography K·R·K⁻¹ (`optics.py`, the one model registration
+uses too), not a rigid rotation, so the only unknown is the pole's image point; matched star peaks
+score every candidate axis on the sphere and the best is refined over a 15-minute baseline. `new
+--auto` uses the frame selection, pole and sky row directly.
 
 `newproject.py` takes the CR3 folder and the 1-based first/last positions to use (drop test frames
-and fog), reads exposure, timestamps, orientation and white balance from EXIF, and writes
-`project.json`. `--pole` is the celestial pole in display pixels (read it off a quick lighten-stack
-of the embedded previews); `--skyrows` is a display row above which everything is certainly sky.
+and fog), reads exposure, timestamps, orientation, white balance, lens, focal length and crop
+factor from EXIF, and writes `project.json`. `--pole` overrides the celestial pole (display pixels);
+`--skyrows` a display row above which everything is certainly sky.
 
-Stages, in order: convert (Siril debayer, rotate to display orientation, hot-pixel patch) → ground
+Stages, in order: convert (Siril debayer, rotate to display orientation) → hot (hot-pixel patch) → ground
 (median and sigma-clipped static stacks) → mask → refine (pixel-accurate treeline) → clouds →
 reblank → undist → register → fit → warp → stack → pad → count → tone → astap → annotate →
 traffic → mood → print → trails → export → timelapse → encode → deliver. Each writes
@@ -51,7 +55,9 @@ happened once (upside-down rotation, hot-pixel threshold misfire, mask leaking i
 erased by the composite, empty trail layer). `python smoke.py` builds a 12-frame synthetic session
 with a known pole, treeline, lamp, cloud and hot pixels and runs the chain through the composite in
 about 90 seconds; run it before trusting any change. `azastro run` skips stages that already have a
-done marker (`--force` to redo, `--detach` to survive the terminal).
+done marker (`--force` to redo, `--detach` to survive the terminal) and refuses to start while
+another chain holds the project (`chain.pid`): two chains writing the same frames once left a
+session half-patched.
 
 ## Read before changing anything
 
@@ -60,7 +66,8 @@ The things that bit hardest: Siril's own registration cannot handle a 16 mm fiel
 zero pixels are no-data to Siril's rejection stacking; the aligned stack smears the horizon glow
 so the composite background must come from the static stack near the treeline; scipy's
 `binary_erosion(iterations=0)` erodes until nothing is left; FITS rows are stored bottom-up,
-which reverses `np.rot90`.
+which reverses `np.rot90`; on a 16 mm lens the sky does not turn rigidly in the frame (a pole
+40° off-axis moves stars 10-20% differently across the field), so any rigid-rotation fit fails.
 
 ## Credits
 

@@ -5,7 +5,7 @@ Model (u = lensfun-undistorted coords, d = final coords):
 Unknowns: k1, k2, f, pole (x, y), theta_i per frame. Pairs come from the star lists of every frame.
 Writes model.npz: k1, k2, f, pole, H (90 x 3 x 3 in d-space, identity for the reference).
 """
-import numpy as np, cv2
+import numpy as np, optics
 from multiprocessing import Pool
 from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
@@ -24,10 +24,7 @@ def D(p, k1, k2):
 
 
 def Hmat(theta, f, pole):
-    k = np.array([[f, 0, R.CX], [0, f, R.CY], [0, 0, 1.0]])
-    a = np.linalg.inv(k) @ np.array([pole[0], pole[1], 1.0]); a /= np.linalg.norm(a)
-    Rm, _ = cv2.Rodrigues(a * theta)
-    return k @ Rm @ np.linalg.inv(k)
+    return optics.sky_homography(theta, f, pole, R.CX, R.CY)
 
 
 def residuals(x, pairs, idx):
@@ -62,7 +59,7 @@ def main():
             continue
         pairs.append((ref[j[ok], :2], cur[ok, :2])); idx.append(i)
     print("frames in fit", len(idx), "pairs", sum(len(a) for a, _ in pairs), flush=True)
-    x0 = np.r_[0.0, 0.0, R.F_PX, 1700.0, R.HEIGHT - 717.0, [-R.OMEGA * times[i] for i in idx]]
+    x0 = np.r_[0.0, 0.0, R.F_PX, R.P.POLE_DISPLAY[0], R.HEIGHT - 1 - R.P.POLE_DISPLAY[1], [-R.OMEGA * times[i] for i in idx]]
     for tol in (6, 3):
         lo = np.r_[-0.2, -0.2, 0.3 * R.F_PX, -np.inf, -np.inf, np.full(len(idx), -np.inf)]     # residual distortion stays small
         hi = np.r_[0.2, 0.2, 3.0 * R.F_PX, np.inf, np.inf, np.full(len(idx), np.inf)]

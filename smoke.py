@@ -1,17 +1,22 @@
 """Two-minute synthetic smoke test of the chain. Builds a small project (1200 x 800 frames) with a
 known star field rotating about a known pole, a jagged treeline, a lit lamp on the shore, a passing
 cloud, hot pixels and noise; writes full_NNNNN.fit + project.json + undist_coords (identity) and runs
-the stages ground..tone through azastro, then checks the recovered pole and the composite.
+the stages hot..tone through azastro, then checks the recovered pole and the composite.
 
   python smoke.py [workdir]      (default D:/AstroWork/_smoke)
 """
 import os, sys, json, shutil, subprocess, numpy as np
 from astropy.io import fits
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import optics
 
 W = sys.argv[1] if len(sys.argv) > 1 else r"D:\AstroWork\_smoke"
 HERE = os.path.dirname(os.path.abspath(__file__))
 WID, HEI, N, EXPO, CAD = 1200, 800, 12, 8.0, 300.0      # 55 min of sky rotation: enough to pin the pole
 POLE = (420.0, 200.0)                   # display px (x right, y down)
+FOCAL, CROP = 16.0, 1.0                 # a 16 mm lens on a 36 mm sensor: the sky turns as a pinhole homography, not rigidly
+F_PX = optics.focal_px(FOCAL, WID, CROP)
+CX, CY = (WID - 1) / 2, (HEI - 1) / 2
 OMEGA = 2 * np.pi / 86164.0905
 rng = np.random.default_rng(1)
 
@@ -32,15 +37,17 @@ def scene():
 
 
 def stars(n=900):
-    r = rng.uniform(80, 900, n); a = rng.uniform(0, 2 * np.pi, n)
+    """reference-frame positions (spread beyond the frame so stars turn in) and fluxes"""
+    pts = np.c_[rng.uniform(-400, WID + 400, n), rng.uniform(-400, HEI + 400, n)]
     flux = rng.pareto(1.5, n) * 40 + 20
-    return r, a, flux
+    return pts, flux
 
 
-def render_frame(i, base, sky, R, A, F, t):
+def render_frame(i, base, sky, pts, F, t):
     img = base.copy()
     theta = -OMEGA * t                                                  # counter-clockwise on screen, like the northern sky
-    x = POLE[0] + R * np.cos(A + theta); y = POLE[1] + R * np.sin(A + theta)
+    q = optics.apply(optics.sky_homography(theta, F_PX, POLE, CX, CY), pts)
+    x, y = q[:, 0], q[:, 1]
     yy, xx = np.mgrid[0:HEI, 0:WID]
     for xs, ys, f in zip(x, y, F):
         if -5 < xs < WID + 5 and -5 < ys < HEI + 5:
@@ -61,26 +68,25 @@ def main():
         shutil.rmtree(W)
     os.makedirs(W)
     base, sky = scene()
-    R, A, F = stars()
+    pts, F = stars()
     hot = rng.integers(0, HEI * WID, 300)
     times = [i * CAD for i in range(N)]
     ref = N // 2 + 1
     for i in range(1, N + 1):
-        img = render_frame(i, base, sky, R, A, F, times[i - 1] - times[ref - 1])
+        img = render_frame(i, base, sky, pts, F, times[i - 1] - times[ref - 1])
         flat = img.reshape(3, -1); flat[:, hot] += 400                     # hot pixels, same place every frame
         raw = np.clip(img + 2047, 0, 16383)                                # raw ADU with black level
         fits.PrimaryHDU(raw[:, ::-1, :].astype(np.uint16)).writeto(f"{W}/full_{i:05d}.fit", overwrite=True)   # FITS rows bottom-up
-    hotmask = np.zeros(HEI * WID, bool); hotmask[hot] = True
-    np.save(f"{W}/hot_mask.npy", hotmask.reshape(HEI, WID)[::-1])
     yy, xx = np.mgrid[0:HEI, 0:WID].astype(np.float32)
     np.save(f"{W}/undist_coords.npy", np.stack([xx, yy], -1))            # no lens distortion in the synthetic frames
     cfg = {"name": "Smoke", "width": WID, "height": HEI, "frame_ids": list(range(1, N + 1)), "ref": ref, "exposure": EXPO,
            "times": [t - times[ref - 1] for t in times], "pole_display": [POLE[0] + 15, POLE[1] - 10], "sky_rows": 400,
            "orientation": "Horizontal (normal)", "wb": [1024, 1024, 1024], "date": "2026-01-01T00:00:00",
+           "lens": "none", "focal": FOCAL, "crop": CROP,
            "source_folder": W, "sources": [f"full_{i:05d}.fit" for i in range(1, N + 1)]}
     json.dump(cfg, open(f"{W}/project.json", "w"), indent=1)
     env = dict(os.environ, ASTRO_WORK=W.replace("\\", "/"), SMOKE="1")
-    r = subprocess.run([sys.executable, os.path.join(HERE, "azastro.py"), "run", W, "--from", "ground", "--to", "tone"], env=env)
+    r = subprocess.run([sys.executable, os.path.join(HERE, "azastro.py"), "run", W, "--from", "hot", "--to", "tone"], env=env)
     m = np.load(f"{W}/model.npz")
     err = np.hypot(m["pole"][0] - POLE[0], (HEI - 1 - m["pole"][1]) - POLE[1])
     print(f"pole recovered within {err:.1f} px; run rc {r.returncode}")

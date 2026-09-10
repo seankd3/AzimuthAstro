@@ -6,7 +6,7 @@ python register.py diag 45 1        -> match statistics for one pair
 python register.py all              -> H for every frame (H_all.npy) and warped r_u_sky_NNNNN.fit
 All coordinates are FITS orientation (row 0 = bottom), x = column, y = row.
 """
-import sys, glob, numpy as np, cv2
+import sys, glob, numpy as np, cv2, optics
 from astropy.io import fits
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
@@ -15,7 +15,7 @@ import project as P
 W = P.W
 WIDTH, HEIGHT = P.WIDTH, P.HEIGHT
 CX, CY = (WIDTH - 1) / 2, (HEIGHT - 1) / 2
-F_PX = 16.0 / 0.004394                   # focal length in pixels (R5 pitch 4.394 um)
+F_PX = optics.focal_px(P.FOCAL, max(WIDTH, HEIGHT), P.CROP)
 OMEGA = np.deg2rad(360.0 / 86164.0905)   # sidereal rate, rad/s
 REF = P.REF
 NSTARS = 1500
@@ -63,15 +63,10 @@ def K():
 
 def H_model(theta, pole_xy, f=None):
     """Homography mapping a frame rotated by theta (about the pole axis) back to the reference."""
-    k = K() if f is None else np.array([[f, 0, CX], [0, f, CY], [0, 0, 1.0]])
-    a = np.linalg.inv(k) @ np.array([pole_xy[0], pole_xy[1], 1.0]); a /= np.linalg.norm(a)
-    R, _ = cv2.Rodrigues(a * theta)
-    return k @ R @ np.linalg.inv(k)
+    return optics.sky_homography(theta, F_PX if f is None else f, pole_xy, CX, CY)
 
 
-def apply(Hm, pts):
-    p = np.c_[pts[:, :2], np.ones(len(pts))] @ Hm.T
-    return p[:, :2] / p[:, 2:3]
+apply = optics.apply
 
 
 def match(ref, cur, Hm, tol):

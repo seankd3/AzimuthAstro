@@ -10,15 +10,16 @@ opts = dict(zip(sys.argv[6::2], sys.argv[7::2]))
 skip = set(int(x) for x in opts.get("--skip", "").split(",") if x)
 files = sorted(glob.glob(os.path.join(folder, "*.CR3")))
 sel = [f for k, f in enumerate(files, start=1) if first <= k <= last and k not in skip]
-tags = subprocess.run(["exiftool", "-q", "-p", "$FileName\t$DateTimeOriginal\t$ExposureTime\t$Orientation\t$WB_RGGBLevelsAsShot\t$ImageWidth\t$ImageHeight"] + sel,
-                      capture_output=True, text=True).stdout.strip().split("\n")
-rows = [t.split("\t") for t in tags]
+tags = subprocess.run(["exiftool", "-q", "-p", "$FileName\t$DateTimeOriginal\t$ExposureTime\t$Orientation\t$WB_RGGBLevelsAsShot\t$ImageWidth\t$ImageHeight\t$LensModel\t$FocalLength\t$ScaleFactor35efl",
+                       "-ext", "CR3", folder], capture_output=True, text=True).stdout.strip().split("\n")   # the folder, not the files: command-line limit
+want = {os.path.basename(f) for f in sel}
+rows = [t.split("\t") for t in tags if t.split("\t")[0] in want]
 ts = [datetime.datetime.strptime(r[1], "%Y:%m:%d %H:%M:%S").timestamp() for r in rows]
 ref = len(sel) // 2 + 1
 times = [t - ts[ref - 1] for t in ts]
 exposure = float(rows[0][2])
 orient = rows[0][3]
-w, h = 8191, 5463                                  # Siril drops the last row/column of the R5 frame
+w, h = int(rows[0][5]) - 1, int(rows[0][6]) - 1    # Siril drops the last row/column of the debayered frame
 if "90" in orient or "270" in orient:
     w, h = h, w
 wb = [int(x) for x in rows[0][4].split()]
@@ -26,6 +27,7 @@ cfg = {"name": name, "width": w, "height": h, "frame_ids": list(range(1, len(sel
        "exposure": exposure, "times": times, "pole_display": [float(x) for x in opts.get("--pole", "0,0").split(",")],
        "sky_rows": int(opts.get("--skyrows", h // 2)), "orientation": orient, "wb": [wb[0], wb[1], wb[3]],
        "date": datetime.datetime.utcfromtimestamp(ts[ref - 1]).strftime("%Y-%m-%dT%H:%M:%S"),
+       "lens": rows[0][7], "focal": float(rows[0][8].split()[0]), "crop": float(rows[0][9] or 1.0),
        "source_folder": folder, "sources": [os.path.basename(f) for f in sel]}
 os.makedirs(work, exist_ok=True)
 json.dump(cfg, open(os.path.join(work, "project.json"), "w"), indent=1)

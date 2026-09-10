@@ -14,7 +14,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIRIL = r"C:\Program Files\Siril\bin\siril-cli.exe"
-STAGES = ["convert", "ground", "mask", "refine", "clouds", "reblank", "undist", "register", "fit", "warp", "stack",
+STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "reblank", "undist", "register", "fit", "warp", "stack",
           "pad", "count", "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
 NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "encode", "deliver"}
 
@@ -22,7 +22,7 @@ NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "enco
 # ----------------------------------------------------------------------------- inspect
 EXIF_TAGS = ["FileName", "DateTimeOriginal", "ExposureTime", "FNumber", "ISO", "FocusMode", "FocusDistanceUpper",
              "ShutterMode", "Quality", "WhiteBalance", "ColorTemperature", "Orientation", "LongExposureNoiseReduction",
-             "HighlightTonePriority", "ImageStabilization", "CameraTemperature", "LensModel", "Model"]
+             "HighlightTonePriority", "ImageStabilization", "CameraTemperature", "LensModel", "Model", "ImageWidth", "ImageHeight", "FocalLength", "ScaleFactor35efl"]
 
 
 def exif_table(folder):
@@ -49,7 +49,8 @@ def _preview_stats(args):
     return int(pk.sum()), float(np.median(sky))
 
 
-def _peaks(path, orient):
+def _peaks(path, orient, row_max=None, n=150):
+    """the n brightest star-like peaks above display row `row_max` (sky only) of one preview, sub-pixel."""
     from PIL import Image
     from scipy import ndimage as ndi
     im = Image.open(path).convert("L")
@@ -60,52 +61,35 @@ def _peaks(path, orient):
     sig = 1.4826 * np.median(np.abs(hp))
     sm = ndi.gaussian_filter(hp, 1.0)
     pk = (sm == ndi.maximum_filter(sm, 5)) & (sm > 6 * max(sig, 1.0))
+    if row_max is not None:
+        pk[row_max:] = False
     ys, xs = np.nonzero(pk)
-    order = np.argsort(-sm[ys, xs])[:300]                              # the brightest are the reliable ones
-    return np.c_[xs[order], ys[order]].astype(np.float32), g.shape
+    order = np.argsort(-sm[ys, xs])[:n]                                # the brightest are the reliable ones
+    ys, xs = ys[order], xs[order]
+    keep = (ys > 0) & (ys < g.shape[0] - 1) & (xs > 0) & (xs < g.shape[1] - 1)
+    ys, xs = ys[keep], xs[keep]
+    dy, dx = np.mgrid[-1:2, -1:2]
+    w = np.clip(sm[ys[:, None, None] + dy, xs[:, None, None] + dx], 0, None)   # 3x3 weighted centroid
+    tot = w.sum(axis=(1, 2))
+    return np.c_[xs + (w * dx).sum(axis=(1, 2)) / tot, ys + (w * dy).sum(axis=(1, 2)) / tot].astype(np.float32), g.shape
 
 
-def pole_from_previews(prev, orient, cadence=30.0, pairs=12):
-    """Stars move on circles around the celestial pole: a star's displacement between two previews
-    `lag` frames apart is perpendicular to the line from the pole to the star, so every matched pair
-    gives one linear equation for the pole. Ground lights do not move and drop out.
-    Also the display row above which trails exist in nearly every column (certainly sky).
-    Returns pole (x, y) and the sky row in full-resolution display pixels, plus the full size."""
+def pole_from_previews(prev, times, orient, full, focal_px, pairs=12):
+    """Where the sky turns. Between two previews the sky has turned by a known angle (the clock) about the
+    celestial pole, and on the sensor that is the pinhole homography K R K^-1 (optics.sky_homography), so
+    the only unknown is the pole's image point. Matched star peaks score candidate poles over the whole
+    sphere; the best is refined by least squares, then re-matched over a longer baseline.
+    `prev` holds only usable frames (in focus, not tests), `times` their timestamps, `full` the sensor (w, h),
+    `focal_px` the focal length in full-resolution pixels. Also the display row above which trails exist in
+    nearly every column (certainly sky). Returns pole (x, y) and sky row in full-resolution display pixels,
+    plus the display size."""
     from scipy.spatial import cKDTree
+    from scipy.optimize import least_squares
     from scipy import ndimage as ndi
     from PIL import Image
+    import optics
     n = len(prev)
-    lag = int(max(2, min(n // 4, round(300.0 / max(cadence, 1.0)))))    # ~5 min apart: 20-40 px of motion at preview scale
-    idx = np.linspace(0, n - 1 - lag, pairs).astype(int)
-    A, b = [], []
-    shape = None
-    for k in idx:
-        p0, shape = _peaks(prev[k], orient); p1, _ = _peaks(prev[k + lag], orient)
-        if len(p0) < 20 or len(p1) < 20:
-            continue
-        d, j = cKDTree(p1).query(p0, distance_upper_bound=60)
-        ok = np.isfinite(d) & (d > 3.0)
-        q, q1 = p0[ok], p1[j[ok]]
-        disp = q1 - q                                                        # (q - pole) . disp = 0
-        A.append(disp); b.append((disp * q).sum(axis=1))
-    A = np.concatenate(A); b = np.concatenate(b)
-    norms = np.maximum(np.linalg.norm(A, axis=1), 1e-6)
-    best, best_n = None, -1                                                  # RANSAC: two lines fix a pole; count lines within 25 px
-    rs = np.random.default_rng(0)
-    for _ in range(400):
-        i, j = rs.choice(len(A), 2, replace=False)
-        M = A[[i, j]]
-        if abs(np.linalg.det(M)) < 1e-3:
-            continue
-        cand = np.linalg.solve(M, b[[i, j]])
-        n_in = int((np.abs(A @ cand - b) / norms < 25).sum())
-        if n_in > best_n:
-            best, best_n = cand, n_in
-    inl = np.abs(A @ best - b) / norms < 25
-    p = np.linalg.lstsq(A[inl], b[inl], rcond=None)[0]                       # refit on the consensus set
-    print(f"  pole fit: {inl.sum()} of {len(A)} star displacements agree")
-    H, W = shape
-    scale = (5463 if ("90" in orient or "270" in orient) else 8191) / W
+    step = float(np.median(np.diff(times))) if n > 1 else 30.0
     acc = None
     for path in prev[::4]:
         im = Image.open(path).convert("L")
@@ -113,11 +97,71 @@ def pole_from_previews(prev, orient, cadence=30.0, pairs=12):
             im = im.rotate(90 if "270" in orient else -90, expand=True)
         a = np.asarray(im, dtype=np.float32)
         acc = a if acc is None else np.maximum(acc, a)
+    H, W = acc.shape
     tr = np.clip(acc - ndi.median_filter(acc, 25), 0, None)
     cover = tr > (np.percentile(tr[tr > 0], 50) if (tr > 0).any() else 0)
     lowest = np.array([np.max(np.nonzero(cover[:, c])[0]) if cover[:, c].any() else 0 for c in range(W)])
-    skyrows = int(np.min(lowest[lowest > 0]) * scale * 0.9) if (lowest > 0).any() else H // 2   # above the highest tree
-    return (p[0] * scale, p[1] * scale), skyrows, int(round(W * scale)), int(round(H * scale))
+    sky_row_prev = int(np.min(lowest[lowest > 0]) * 0.9) if (lowest > 0).any() else H // 2
+    scale = (full[1] if ("90" in orient or "270" in orient) else full[0]) / W
+    f = focal_px / scale
+    cx, cy = (W - 1) / 2, (H - 1) / 2
+    om = 2 * np.pi / 86164.0905
+
+    def rays(pts):
+        return np.c_[(pts[:, 0] - cx) / f, (pts[:, 1] - cy) / f, np.ones(len(pts))]
+
+    def pairs_at(lag, pole=None, tol=30.0):
+        """matched (q, q1, theta) over `pairs` preview pairs `lag` apart: mutual nearest neighbours, or
+        nearest to the position a known pole predicts."""
+        Q, Q1, TH = [], [], []
+        for k in np.linspace(0, n - 1 - lag, pairs).astype(int):
+            p0, _ = _peaks(prev[k], orient, sky_row_prev); p1, _ = _peaks(prev[k + lag], orient, sky_row_prev)   # sky only: lake reflections turn about a mirrored pole
+            if len(p0) < 20 or len(p1) < 20:
+                continue
+            th = om * (times[k + lag] - times[k])                            # the rotation angle is known from the clock
+            if pole is None:
+                d, j = cKDTree(p1).query(p0, distance_upper_bound=tol)
+                d2, j2 = cKDTree(p0).query(p1, distance_upper_bound=tol)
+                ok = np.isfinite(d) & (d > 2.0) & (j2[np.minimum(j, len(p1) - 1)] == np.arange(len(p0)))
+            else:
+                pred = optics.apply(optics.sky_homography(pole[2] * th, f, pole[:2], cx, cy), p0)
+                d, j = cKDTree(p1).query(pred, distance_upper_bound=tol)
+                ok = np.isfinite(d)
+            Q.append(p0[ok]); Q1.append(p1[j[ok]]); TH.append(np.full(int(ok.sum()), th))
+        return np.concatenate(Q), np.concatenate(Q1), np.concatenate(TH)
+
+    def predict(axes, Q, TH):
+        """(M, N, 2) positions of rays Q turned by TH about each unit axis (Rodrigues, vectorised)."""
+        v = rays(Q)
+        c, s_ = np.cos(TH)[None, :, None], np.sin(TH)[None, :, None]
+        nxv = np.cross(axes[:, None, :], v[None, :, :])
+        ndv = (axes[:, None, :] * v[None, :, :]).sum(-1)[..., None]
+        r = v[None] * c + nxv * s_ + axes[:, None, :] * ndv * (1 - c)
+        return np.stack([r[..., 0] / r[..., 2] * f + cx, r[..., 1] / r[..., 2] * f + cy], -1)
+
+    Q, Q1, TH = pairs_at(int(max(1, min(n // 4, round(150.0 / max(step, 1.0))))))   # ~2.5 min: ~10 px of motion, below the star spacing
+    i = np.arange(4000) + 0.5                                                # every axis on the sphere (Fibonacci); theta > 0 covers both senses
+    z = 1 - 2 * i / 4000; r = np.sqrt(1 - z * z); phi = np.pi * (1 + 5 ** 0.5) * i
+    axes = np.c_[r * np.cos(phi), r * np.sin(phi), z]
+    score = np.zeros(len(axes), int)
+    for c0 in range(0, len(axes), 250):
+        score[c0:c0 + 250] = (np.linalg.norm(predict(axes[c0:c0 + 250], Q, TH) - Q1[None], axis=2) < 3.0).sum(axis=1)
+    ax = axes[score.argmax()]
+    sign = 1.0 if ax[2] > 0 else -1.0                                        # the pole's image point is where the axis meets the sensor plane
+    pole = np.array([ax[0] / ax[2] * f + cx, ax[1] / ax[2] * f + cy, sign])
+
+    def residual(x, Q, Q1, TH):
+        a = np.array([(x[0] - cx) / f, (x[1] - cy) / f, 1.0]); a /= np.linalg.norm(a)
+        return (predict(a[None], Q, TH)[0] - Q1).ravel()
+
+    for lag_s, tol in ((150.0, 3.0), (900.0, 4.0)):                          # refine, then again over ~15 min of motion matched by prediction
+        lag = int(max(1, min(n - 2, round(lag_s / max(step, 1.0)))))
+        Q, Q1, TH = pairs_at(lag, pole, tol)
+        fit = least_squares(residual, pole[:2], args=(Q, Q1, TH * pole[2]), loss="soft_l1", f_scale=1.0)
+        pole[:2] = fit.x
+        res = np.linalg.norm(residual(pole, Q, Q1, TH * pole[2]).reshape(-1, 2), axis=1)
+    print(f"  pole fit: {(res < 2).sum()} of {len(res)} star displacements agree within 2 px ({'counter-' if sign > 0 else ''}clockwise on screen)")
+    return (pole[0] * scale, pole[1] * scale), int(sky_row_prev * scale), int(round(W * scale)), int(round(H * scale))
 
 
 def inspect(folder, write_json=True):
@@ -177,8 +221,12 @@ def inspect(folder, write_json=True):
     with Pool(6) as p:
         stats = p.map(_preview_stats, [(pv, rows[0]["Orientation"]) for pv in prev])
     stars = np.array([s[0] for s in stats]); sky = np.array([s[1] for s in stats])
-    pole, skyrows, full_w, full_h = pole_from_previews(prev, rows[0]["Orientation"], cadence)
     good = np.ones(n, bool); good[[t - 1 for t in tests]] = False
+    usable = good.copy(); usable[[i - 1 for i in skip]] = False              # misfocused previews have no matchable stars
+    import optics
+    full = (int(rows[0]["ImageWidth"]), int(rows[0]["ImageHeight"]))
+    fpx = optics.focal_px(float(rows[0]["FocalLength"].split()[0]), max(full), float(rows[0]["ScaleFactor35efl"] or 1.0))
+    pole, skyrows, full_w, full_h = pole_from_previews([p for p, u in zip(prev, usable) if u], np.array(ts)[usable], rows[0]["Orientation"], full, fpx)
     clear = np.median(stars[good][: max(10, good.sum() // 3)])
     thr = 0.6 * clear
     healthy = np.nonzero((stars > thr) & good)[0]
@@ -237,6 +285,22 @@ def has_cuda():
         return False
 
 
+def _alive(pid):
+    if not pid:
+        return False
+    if os.name == "nt":
+        import ctypes
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)      # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong(); ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code)); ctypes.windll.kernel32.CloseHandle(h)
+        return code.value == 259                                        # STILL_ACTIVE
+    try:
+        os.kill(pid, 0); return True
+    except OSError:
+        return False
+
+
 def run(args):
     W = os.path.abspath(args.workdir)
     env = dict(os.environ, ASTRO_WORK=W.replace("\\", "/"))
@@ -263,6 +327,11 @@ def run(args):
             proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
         print(f"detached pid {proc.pid}; follow with: azastro status {args.workdir}")
         return
+    lock = os.path.join(W, "chain.pid")                                 # one chain per workdir: two would write the same files
+    if os.path.exists(lock) and _alive(int(open(lock).read() or 0)):
+        raise SystemExit(f"a chain is already running in {W} (pid {open(lock).read()}); see chain.log")
+    open(lock, "w").write(str(os.getpid()))
+    import atexit; atexit.register(lambda: os.path.exists(lock) and os.remove(lock))
     done_dir = os.path.join(W, ".done"); os.makedirs(done_dir, exist_ok=True)
     for st in STAGES[i0:i1 + 1]:
         marker = os.path.join(done_dir, st)
@@ -273,7 +342,7 @@ def run(args):
             try: os.remove(os.path.join(done_dir, later))
             except OSError: pass
         cmd = {
-            "convert": py("convert.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
+            "convert": py("convert.py"), "hot": py("hot.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
             "reblank": py("reblank.py"), "undist": py("undist_frames.py"), "register": py("register.py", "all"),
             "fit": py("fitmodel.py"), "warp": py("warp2.py"), "pad": py("padstack.py"), "count": py("countmap.py"),
             "tone": py("tone_fit.py", "60", "0.18"), "astap": py("astap_center.py"), "annotate": py("solve.py"),

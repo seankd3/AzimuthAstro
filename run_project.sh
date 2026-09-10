@@ -10,7 +10,7 @@ SIRIL="/c/Program Files/Siril/bin/siril-cli.exe"
 cd "$P"
 MOOD_FRAME=${MOOD_FRAME:-1}
 start=${1:-convert}
-stages=(convert ground mask refine clouds reblank undist register fit warp stack pad count tone astap annotate traffic mood print trails export timelapse encode deliver)
+stages=(convert hot ground mask refine clouds reblank undist register fit warp stack pad count tone astap annotate traffic mood print trails export timelapse encode deliver)
 run=0
 fail() { echo "FAIL $1" >> chain.log; exit 1; }
 for st in "${stages[@]}"; do
@@ -19,6 +19,7 @@ for st in "${stages[@]}"; do
   echo "$(date +%H:%M) $st" >> chain.log
   case $st in
     convert)  [ -f full_00001.fit ] || python $E/convert.py > log_convert.log 2>&1 || fail convert ;;
+    hot)      python $E/hot.py > log_hot.log 2>&1 || fail hot ;;
     ground)   rm -f full_.seq; printf 'requires 1.2.0\ncd %s\nsetext fit\nset32bits\nsetcpu 14\nstack full median -nonorm -out=ground\nstack full rej w 3 3 -nonorm -out=ground_mean\n' "$PW" > ground.ssf
               "$SIRIL" -s "$PW/ground.ssf" > log_ground.log 2>&1; grep -q "Script execution finished successfully" log_ground.log || fail ground
               cp ground.fit ground_fixed.fit ;;
