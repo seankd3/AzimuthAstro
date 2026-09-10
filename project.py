@@ -1,5 +1,5 @@
 """One project = one directory with a project.json. Every engine script reads its facts from here.
-Select with the ASTRO_WORK environment variable (default: the NH Lake session of 2026-09-07).
+Select the project directory with the ASTRO_WORK environment variable (required).
 
 project.json:
   name            output file prefix

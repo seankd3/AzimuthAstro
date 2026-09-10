@@ -44,3 +44,7 @@ zero pixels are no-data to Siril's rejection stacking; the aligned stack smears 
 so the composite background must come from the static stack near the treeline; scipy's
 `binary_erosion(iterations=0)` erodes until nothing is left; FITS rows are stored bottom-up,
 which reverses `np.rot90`.
+
+## Credits
+
+`lensfun-mil-canon.xml` is an extract of the [lensfun](https://lensfun.github.io/) database (CC BY-SA 3.0), edited to database version 1 for lensfunpy.
