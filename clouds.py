@@ -52,7 +52,7 @@ def main():
     print()
     print("mean cloud fraction over sky", fr.mean())
     tiles = []
-    for i in (0, 30, 45, 60, 67, 75, 82, 89):
+    for i in np.linspace(0, len(FRAMES) - 1, 8).astype(int):
         e = excess[i]; img = np.clip((e + 2) / 8, 0, 1)
         rgb = np.stack([img] * 3, -1)
         rgb[..., 0] = np.where(masks[i], 1.0, rgb[..., 0])

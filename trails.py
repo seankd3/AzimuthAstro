@@ -17,7 +17,7 @@ STEP = 8.0                  # seconds between rendered positions (= one exposure
 TAU = 900.0                 # comet tail e-folding time, seconds
 SNAP_EVERY = 4
 SCALE_VIDEO = 0.5
-PAD = 700
+PAD = Rn.PAD
 
 
 def T(pad, s=1.0):

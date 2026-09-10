@@ -66,10 +66,12 @@ def main():
     ov = np.stack([stretch(g)] * 3, -1).astype(np.float32)
     ov[..., 0] = np.where(sky, ov[..., 0] * 0.5 + 128, ov[..., 0])
     ov = ov[::-1].astype(np.uint8)
-    Image.fromarray(ov[::2, ::2]).save(f"{W}\\preview_mask_overlay.jpg", quality=90)
-    Image.fromarray(ov[1200:2100, 2300:4096]).save(f"{W}\\preview_mask_crop_right.jpg", quality=90)
-    Image.fromarray(ov[1400:2200, 0:1800]).save(f"{W}\\preview_mask_crop_left.jpg", quality=90)
-    Image.fromarray(ov[1500:2200, 1600:3000]).save(f"{W}\\preview_mask_crop_mid.jpg", quality=90)
+    Image.fromarray(ov[::2, ::2]).save(f"{W}/preview_mask_overlay.jpg", quality=90)
+    h, w = ov.shape[:2]
+    band = (~sky[::-1][:, 30:-30]).any(axis=1).nonzero()[0]; band = band[band > 30]   # display rows with ground (not the eroded border)
+    r0 = max(0, (int(band.min()) if len(band) else h // 2) - h // 8); r1 = min(h, r0 + h // 3)
+    for name, c0, c1 in (("left", 0, w // 3), ("mid", w // 3, 2 * w // 3), ("right", 2 * w // 3, w)):
+        Image.fromarray(ov[r0:r1, c0:c1]).save(f"{W}/preview_mask_crop_{name}.jpg", quality=90)
 
 
 if __name__ == "__main__":

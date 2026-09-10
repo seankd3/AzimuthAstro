@@ -87,11 +87,21 @@ def pole_from_previews(prev, orient, lag=6, pairs=12):
         disp = q1 - q                                                        # (q - pole) . disp = 0
         A.append(disp); b.append((disp * q).sum(axis=1))
     A = np.concatenate(A); b = np.concatenate(b)
-    for _ in range(3):                                                       # drop mismatches
-        p = np.linalg.lstsq(A, b, rcond=None)[0]
-        r = np.abs(A @ p - b) / np.maximum(np.linalg.norm(A, axis=1), 1e-6)
-        keep = r < np.percentile(r, 60)
-        A, b = A[keep], b[keep]
+    norms = np.maximum(np.linalg.norm(A, axis=1), 1e-6)
+    best, best_n = None, -1                                                  # RANSAC: two lines fix a pole; count lines within 25 px
+    rs = np.random.default_rng(0)
+    for _ in range(400):
+        i, j = rs.choice(len(A), 2, replace=False)
+        M = A[[i, j]]
+        if abs(np.linalg.det(M)) < 1e-3:
+            continue
+        cand = np.linalg.solve(M, b[[i, j]])
+        n_in = int((np.abs(A @ cand - b) / norms < 25).sum())
+        if n_in > best_n:
+            best, best_n = cand, n_in
+    inl = np.abs(A @ best - b) / norms < 25
+    p = np.linalg.lstsq(A[inl], b[inl], rcond=None)[0]                       # refit on the consensus set
+    print(f"  pole fit: {inl.sum()} of {len(A)} star displacements agree")
     H, W = shape
     scale = (5463 if ("90" in orient or "270" in orient) else 8191) / W
     acc = None
@@ -104,7 +114,7 @@ def pole_from_previews(prev, orient, lag=6, pairs=12):
     tr = np.clip(acc - ndi.median_filter(acc, 25), 0, None)
     cover = tr > (np.percentile(tr[tr > 0], 50) if (tr > 0).any() else 0)
     lowest = np.array([np.max(np.nonzero(cover[:, c])[0]) if cover[:, c].any() else 0 for c in range(W)])
-    skyrows = int(np.percentile(lowest, 2) * scale * 0.95)
+    skyrows = int(np.min(lowest[lowest > 0]) * scale * 0.9) if (lowest > 0).any() else H // 2   # above the highest tree
     return (p[0] * scale, p[1] * scale), skyrows, int(round(W * scale)), int(round(H * scale))
 
 

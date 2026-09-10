@@ -8,7 +8,7 @@ import render as Rn
 import register as R
 
 W = Rn.W
-STEP, TAU, SNAP_EVERY, SCALE_VIDEO, PAD = 8.0, 900.0, 4, 0.5, 700
+STEP, TAU, SNAP_EVERY, SCALE_VIDEO, PAD = 8.0, 900.0, 4, 0.5, Rn.PAD
 MAXSTEPS = int(os.environ.get("MAXSTEPS", "0"))
 dev = torch.device("cuda")
 

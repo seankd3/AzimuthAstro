@@ -21,6 +21,7 @@ K1, K2, FPX, POLE = float(_m["k1"]), float(_m["k2"]), float(_m["f"]), tuple(_m["
 H_FRAME = _m["H"]                       # index 1..90 (odd CR3 frames), d-space, frame -> reference
 TIMES = R.frame_times()                 # seconds relative to the reference frame (45)
 EXPOSURE = R.P.EXPOSURE
+PAD = int(round(0.085 * R.WIDTH))          # padded-canvas ring: enough for the sky rotation over a night at 16mm
 P = R.P
 
 

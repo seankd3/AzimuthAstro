@@ -64,7 +64,10 @@ def main():
     print("frames in fit", len(idx), "pairs", sum(len(a) for a, _ in pairs), flush=True)
     x0 = np.r_[0.0, 0.0, R.F_PX, 1700.0, R.HEIGHT - 717.0, [-R.OMEGA * times[i] for i in idx]]
     for tol in (6, 3):
-        res = least_squares(residuals, x0, args=(pairs, idx), loss="soft_l1", f_scale=1.5, max_nfev=200)
+        lo = np.r_[-0.2, -0.2, 0.3 * R.F_PX, -np.inf, -np.inf, np.full(len(idx), -np.inf)]     # residual distortion stays small
+        hi = np.r_[0.2, 0.2, 3.0 * R.F_PX, np.inf, np.inf, np.full(len(idx), np.inf)]
+        x0 = np.clip(x0, lo + 1e-9, hi - 1e-9)
+        res = least_squares(residuals, x0, args=(pairs, idx), loss="soft_l1", f_scale=1.5, max_nfev=200, bounds=(lo, hi))
         x0 = res.x
         k1, k2, f, px, py = x0[:5]
         print(f"tol {tol}: k1 {k1:+.5f} k2 {k2:+.5f} f {f:.1f} pole ({px:.1f},{py:.1f}) cost {res.cost:.1f}", flush=True)

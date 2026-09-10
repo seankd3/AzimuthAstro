@@ -10,7 +10,7 @@ import render as Rn
 import warp2
 
 W = Rn.W
-PAD = 700
+PAD = Rn.PAD
 H, Wd = R.HEIGHT, R.WIDTH
 HP, WP = H + 2 * PAD, Wd + 2 * PAD
 N = R.P.N
