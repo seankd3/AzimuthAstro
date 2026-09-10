@@ -56,7 +56,7 @@ if __name__ == "__main__":
     B = max(4, int(BYTES // (len(files) * shape[0] * shape[2] * 4)))
     bands = [(r0, min(r0 + B, shape[1])) for r0 in range(0, shape[1], B)]
     result = np.zeros(shape, np.float32)
-    with Pool(max(2, (os.cpu_count() or 4) // 4)) as p:                     # each worker holds one band of every frame
+    with Pool(max(2, (os.cpu_count() or 4) // 2)) as p:                     # each worker holds one band of every frame (~1.5 GB)
         for k, (r0, res) in enumerate(p.imap_unordered(one, bands)):
             result[:, r0:r0 + res.shape[1]] = res
             print(f"{k + 1}/{len(bands)}", end=" ", flush=True)
