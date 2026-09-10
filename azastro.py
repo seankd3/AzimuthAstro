@@ -10,9 +10,10 @@
 Stage scripts stay standalone (each reads ASTRO_WORK); this file only composes them. session.py reads a night's folder.
 """
 import os, sys, glob, json, time, argparse, subprocess
-from session import inspect
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)                                                # the stages and session.py live beside this file
+from session import inspect
 STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "reblank", "undist", "register", "fit", "warp", "stack",
           "pad", "count", "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
 NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "encode", "deliver"}
