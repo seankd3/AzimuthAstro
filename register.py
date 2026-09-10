@@ -82,7 +82,7 @@ def match(ref, cur, Hm, tol):
     return cur[ok, :2], ref[j[ok], :2], d[ok]
 
 
-def fit(ref, cur, H0, tols=(25, 8, 3)):
+def fit(ref, cur, H0, tols=(60, 25, 8, 3)):
     Hm = H0
     for tol in tols:
         src, dst, _ = match(ref, cur, Hm, tol)

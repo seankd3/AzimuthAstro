@@ -24,6 +24,8 @@ k = {"Rotate 90 CW": 1, "Rotate 270 CW": 3, "Rotate 180": 2}.get(orient, 0)   # 
 if k:
     for i in range(1, P.N + 1):
         with fits.open(P.full(i), mode="update") as h:
+            if h[0].data.shape[1:] == (P.HEIGHT, P.WIDTH):            # already in display orientation (resumed run)
+                continue
             h[0].data = np.ascontiguousarray(np.rot90(h[0].data, k=k, axes=(1, 2)))
             h.flush()
     print("rotated", P.N, "frames by", orient, flush=True)
@@ -44,12 +46,15 @@ sizes = ndi.sum(hot, lab, index=np.arange(1, n + 1))
 hot = ndi.binary_dilation(np.isin(lab, np.arange(1, n + 1)[sizes <= 25]), iterations=1)
 np.save(f"{P.W}/hot_mask.npy", hot)
 print("hot pixels", int(hot.sum()), flush=True)
+hy, hx = np.nonzero(hot)
+H, Wd = hot.shape
+offs = [(dy, dx) for dy in range(-2, 3) for dx in range(-2, 3) if (dy, dx) != (0, 0)]
+ny = np.stack([np.clip(hy + dy, 0, H - 1) for dy, dx in offs]); nx = np.stack([np.clip(hx + dx, 0, Wd - 1) for dy, dx in offs])
 for i in range(1, P.N + 1):
     with fits.open(P.full(i), mode="update") as h:
         d = h[0].data
-        for c in range(3):
-            med = ndi.median_filter(d[c], 5)
-            d[c][hot] = med[hot]
+        for c in range(3):                                           # median of the 24 neighbours, hot pixels only
+            d[c][hy, hx] = np.median(d[c][ny, nx], axis=0).astype(d.dtype)
         h.flush()
     if i % 50 == 0:
         print("patched", i, flush=True)

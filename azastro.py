@@ -49,6 +49,65 @@ def _preview_stats(args):
     return int(pk.sum()), float(np.median(sky))
 
 
+def _peaks(path, orient):
+    from PIL import Image
+    from scipy import ndimage as ndi
+    im = Image.open(path).convert("L")
+    if "90" in orient or "270" in orient:
+        im = im.rotate(90 if "270" in orient else -90, expand=True)
+    g = np.asarray(im, dtype=np.float32)
+    hp = g - ndi.median_filter(g, 9)
+    sig = 1.4826 * np.median(np.abs(hp))
+    sm = ndi.gaussian_filter(hp, 1.0)
+    pk = (sm == ndi.maximum_filter(sm, 5)) & (sm > 6 * max(sig, 1.0))
+    ys, xs = np.nonzero(pk)
+    return np.c_[xs, ys].astype(np.float32), g.shape
+
+
+def pole_from_previews(prev, orient, lag=6, pairs=12):
+    """Stars move on circles around the celestial pole: a star's displacement between two previews
+    `lag` frames apart is perpendicular to the line from the pole to the star, so every matched pair
+    gives one linear equation for the pole. Ground lights do not move and drop out.
+    Also the display row above which trails exist in nearly every column (certainly sky).
+    Returns pole (x, y) and the sky row in full-resolution display pixels, plus the full size."""
+    from scipy.spatial import cKDTree
+    from scipy import ndimage as ndi
+    from PIL import Image
+    n = len(prev)
+    idx = np.linspace(0, n - 1 - lag, pairs).astype(int)
+    A, b = [], []
+    shape = None
+    for k in idx:
+        p0, shape = _peaks(prev[k], orient); p1, _ = _peaks(prev[k + lag], orient)
+        if len(p0) < 20 or len(p1) < 20:
+            continue
+        d, j = cKDTree(p1).query(p0, distance_upper_bound=40)
+        ok = np.isfinite(d) & (d > 2.5)
+        q, q1 = p0[ok], p1[j[ok]]
+        disp = q1 - q                                                        # (q - pole) . disp = 0
+        A.append(disp); b.append((disp * q).sum(axis=1))
+    A = np.concatenate(A); b = np.concatenate(b)
+    for _ in range(3):                                                       # drop mismatches
+        p = np.linalg.lstsq(A, b, rcond=None)[0]
+        r = np.abs(A @ p - b) / np.maximum(np.linalg.norm(A, axis=1), 1e-6)
+        keep = r < np.percentile(r, 60)
+        A, b = A[keep], b[keep]
+    H, W = shape
+    scale = (5463 if ("90" in orient or "270" in orient) else 8191) / W
+    acc = None
+    for path in prev[::4]:
+        im = Image.open(path).convert("L")
+        if "90" in orient or "270" in orient:
+            im = im.rotate(90 if "270" in orient else -90, expand=True)
+        a = np.asarray(im, dtype=np.float32)
+        acc = a if acc is None else np.maximum(acc, a)
+    tr = np.clip(acc - ndi.median_filter(acc, 25), 0, None)
+    cover = tr > (np.percentile(tr[tr > 0], 50) if (tr > 0).any() else 0)
+    lowest = np.array([np.max(np.nonzero(cover[:, c])[0]) if cover[:, c].any() else 0 for c in range(W)])
+    skyrows = int(np.percentile(lowest, 2) * scale * 0.95)
+    return (p[0] * scale, p[1] * scale), skyrows, int(round(W * scale)), int(round(H * scale))
+
+
 def inspect(folder, write_json=True):
     files, rows = exif_table(folder)
     n = len(rows)
@@ -106,6 +165,7 @@ def inspect(folder, write_json=True):
     with Pool(6) as p:
         stats = p.map(_preview_stats, [(pv, rows[0]["Orientation"]) for pv in prev])
     stars = np.array([s[0] for s in stats]); sky = np.array([s[1] for s in stats])
+    pole, skyrows, full_w, full_h = pole_from_previews(prev, rows[0]["Orientation"])
     good = np.ones(n, bool); good[[t - 1 for t in tests]] = False
     clear = np.median(stars[good][: max(10, good.sum() // 3)])
     thr = 0.6 * clear
@@ -120,10 +180,13 @@ def inspect(folder, write_json=True):
         print(f"fog/haze from frame {last + 1} on ({n - last} frames dropped)")
     for w in warnings:
         print("WARNING:", w)
-    print("\nsuggested:  azastro new <workdir> <name> \"%s\" --first %d --last %d" % (folder, first, last))
+    print(f"pole (display px) {pole[0]:.0f},{pole[1]:.0f}; sky certain above display row {skyrows} of {full_h}")
+    skip_note = f"  (--auto also skips the {len(skip)} misfocused frames listed in _inspect.json)" if skip else ""
+    print("\nsuggested:  azastro new <workdir> <name> \"%s\" --auto   [= --first %d --last %d --pole %.0f,%.0f --skyrows %d]%s"
+          % (folder, first, last, pole[0], pole[1], skyrows, skip_note))
     report = {"folder": folder, "n": n, "cadence": cadence, "exposure": float(np.median(exp)), "duty": duty, "tests": tests,
-              "first": first, "last": last, "dips": dips, "stars": stars.tolist(), "sky": sky.tolist(), "warnings": warnings,
-              "orientation": rows[0]["Orientation"]}
+              "first": first, "last": last, "skip": skip, "pole": [float(pole[0]), float(pole[1])], "skyrows": int(skyrows),
+              "dips": dips, "stars": stars.tolist(), "sky": sky.tolist(), "warnings": warnings, "orientation": rows[0]["Orientation"]}
     if write_json:
         json.dump(report, open(os.path.join(folder, "_inspect.json"), "w"), indent=1)
     return report
@@ -131,9 +194,14 @@ def inspect(folder, write_json=True):
 
 # ----------------------------------------------------------------------------- new / run / status / deliver
 def new(args):
+    rep = None
     if args.auto or args.first is None:
         rep = inspect(args.folder, write_json=True)
         first, last = rep["first"], rep["last"]
+        if not args.pole:
+            args.pole = "%.0f,%.0f" % tuple(rep["pole"])
+        if not args.skyrows:
+            args.skyrows = rep["skyrows"]
         if rep["skip"] and not args.skip:
             args.skip = ",".join(map(str, rep["skip"]))
     else:
@@ -214,6 +282,12 @@ def run(args):
             if st == "ground" and rc == 0:
                 import shutil; shutil.copyfile(os.path.join(W, "ground.fit"), os.path.join(W, "ground_fixed.fit"))
         mins = (time.time() - t0) / 60
+        if rc == 0:
+            gate = subprocess.run([sys.executable, os.path.join(HERE, "gates.py"), st], env=env, capture_output=True, text=True).stdout.strip()
+            if gate:
+                log.write(f"  gate {gate}\n"); log.flush(); print("  " + gate)
+                if gate.startswith("FAIL"):
+                    rc = 2
         if rc != 0:
             log.write(f"FAIL {st} after {mins:.1f} min{' (non-fatal)' if st in NONFATAL else ''}\n"); log.flush()
             print(f"FAIL {st} (see log_{st}.log)")
