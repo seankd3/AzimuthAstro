@@ -25,9 +25,9 @@ def convert():
 
 
 def hot():
-    """hot pixels must be rare (a fixed threshold once flagged 58% of an ISO 3200 frame)."""
+    """hot pixels must be rare (a fixed threshold once flagged 58% of an ISO 3200 frame; a real R5 night at 27 C is 0.3%)."""
     frac = np.load(f"{W}/hot_mask.npy").mean()
-    return frac < 0.002, f"hot pixels {frac*100:.3f}% ({'ok' if frac < 0.002 else 'too many: threshold misfire'})"
+    return frac < 0.01, f"hot pixels {frac*100:.3f}% ({'ok' if frac < 0.01 else 'too many: threshold misfire'})"
 
 
 def encode():
