@@ -39,7 +39,7 @@ def stars(n=900):
 
 def render_frame(i, base, sky, R, A, F, t):
     img = base.copy()
-    theta = OMEGA * t
+    theta = -OMEGA * t                                                  # counter-clockwise on screen, like the northern sky
     x = POLE[0] + R * np.cos(A + theta); y = POLE[1] + R * np.sin(A + theta)
     yy, xx = np.mgrid[0:HEI, 0:WID]
     for xs, ys, f in zip(x, y, F):

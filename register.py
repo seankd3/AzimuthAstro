@@ -142,7 +142,12 @@ def run_all(pole_display=P.POLE_DISPLAY):
     times = frame_times()
     pole = (pole_display[0], HEIGHT - pole_display[1])
     ref = detect(REF)
-    jobs = [(i, OMEGA * times[i], pole, ref) for i in range(1, P.N + 1)]
+    # rotation sense from one nearby frame: the sign whose prior pairs more stars wins (southern sky turns the other way)
+    probe = REF + 5 if REF + 5 <= P.N else REF - 5
+    cur = detect(probe)
+    sign = max((+1, -1), key=lambda sg: len(match(ref, cur, H_model(-sg * OMEGA * times[probe], pole), 25)[0]))
+    print(f"rotation sense {'+' if sign > 0 else '-'} (frame {probe})", flush=True)
+    jobs = [(i, sign * OMEGA * times[i], pole, ref) for i in range(1, P.N + 1)]
     Hs = {}
     with Pool(6) as p:
         for i, Hm, n, res in p.imap_unordered(one, jobs):
