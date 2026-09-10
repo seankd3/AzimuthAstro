@@ -11,6 +11,9 @@ Siril treats as no-data), registered with a physical prior (the pole position pl
 rate from the EXIF timestamps, refined with a fitted residual lens distortion), stacked, and
 composited as stationary background + aligned star layer inside a pixel-accurate sky mask.
 
+![Stacked sky over a frozen shore, NH lake, 90 x 8 s at 16 mm](docs/nh_lake_composite.jpg)
+![Gapless star trails from the same frames](docs/nh_lake_trails.jpg)
+
 ## Requirements
 
 Windows, Python 3.12 with numpy, scipy, astropy, opencv-python, tifffile, pillow, lensfunpy, rawpy,
