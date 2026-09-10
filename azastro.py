@@ -13,7 +13,6 @@ from multiprocessing import Pool
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SIRIL = r"C:\Program Files\Siril\bin\siril-cli.exe"
 STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "reblank", "undist", "register", "fit", "warp", "stack",
           "pad", "count", "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
 NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "encode", "deliver"}
@@ -314,12 +313,6 @@ def run(args):
     def py(name, *a):
         return [sys.executable, os.path.join(HERE, name), *a]
 
-    def siril(script, text):
-        path = os.path.join(W, script)
-        open(path, "w").write(text)
-        return [SIRIL, "-s", path.replace("\\", "/")]
-
-    PW = W.replace("\\", "/")
     if args.detach:                                                      # survive the terminal: relaunch ourselves detached
         cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--from", args.frm, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--force"] if args.force else [])
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -342,7 +335,7 @@ def run(args):
             try: os.remove(os.path.join(done_dir, later))
             except OSError: pass
         cmd = {
-            "convert": py("convert.py"), "hot": py("hot.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
+            "convert": py("decode.py"), "hot": py("hot.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
             "reblank": py("reblank.py"), "undist": py("undist_frames.py"), "register": py("register.py", "all"),
             "fit": py("fitmodel.py"), "warp": py("warp2.py"), "pad": py("padstack.py"), "count": py("countmap.py"),
             "tone": py("tone_fit.py", "60", "0.18"), "astap": py("astap_center.py"), "annotate": py("solve.py"),
@@ -350,19 +343,14 @@ def run(args):
             "trails": py("trails_gpu.py" if gpu else "trails.py"), "export": py("export_trails.py"),
             "timelapse": py("timelapse_gpu.py" if gpu else "timelapse.py", "locked", "standard", "clouds"),
             "encode": ["bash", os.path.join(HERE, "encode.sh")], "deliver": py("deliver.py"),
-            "ground": siril("ground.ssf", f"requires 1.2.0\ncd {PW}\nsetext fit\nset32bits\nsetcpu 14\nstack full median -nonorm -out=ground\nstack full rej w 3 3 -nonorm -out=ground_mean\n"),
-            "stack": siril("stack.ssf", f"requires 1.2.0\ncd {PW}\nsetext fit\nset32bits\nsetcpu 14\nstack r2_sky rej w 3 3 -nonorm -rejmap -out=sky\n"),
+            "ground": py("stack.py", "full", "ground", "median"), "stack": py("stack.py", "r2_sky", "sky", "sigma"),
             "traffic": None,
         }[st]
         log.write(f"{time.strftime('%H:%M')} {st}\n"); log.flush()
         t0 = time.time()
         with open(os.path.join(W, f"log_{st}.log"), "w") as lf:
-            if st == "ground":
-                for f in ("full_.seq",):
-                    try: os.remove(os.path.join(W, f))
-                    except OSError: pass
             if st == "warp":
-                for f in glob.glob(os.path.join(W, "r2_sky_*.fit")) + [os.path.join(W, "r2_sky_.seq"), os.path.join(W, "sky.fit")]:
+                for f in glob.glob(os.path.join(W, "r2_sky_*.fit")) + [os.path.join(W, "sky.fit")]:
                     try: os.remove(f)
                     except OSError: pass
             if st == "traffic":
@@ -370,11 +358,8 @@ def run(args):
                 rc = rc or subprocess.run(py("traffic_still.py"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
             else:
                 rc = subprocess.run(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
-            if st in ("ground", "stack"):
-                ok = "Script execution finished successfully" in open(os.path.join(W, f"log_{st}.log")).read()
-                rc = 0 if ok else 1
             if st == "ground" and rc == 0:
-                import shutil; shutil.copyfile(os.path.join(W, "ground.fit"), os.path.join(W, "ground_fixed.fit"))
+                rc = subprocess.run(py("stack.py", "full", "ground_mean", "sigma"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
         mins = (time.time() - t0) / 60
         if rc == 0:
             gate = subprocess.run([sys.executable, os.path.join(HERE, "gates.py"), st], env=env, capture_output=True, text=True).stdout.strip()

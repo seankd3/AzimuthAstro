@@ -6,7 +6,6 @@ export ASTRO_WORK
 E=/d/AstroWork/engine
 P=$(cygpath "$ASTRO_WORK")
 PW=$(echo "$ASTRO_WORK" | sed 's#\\#/#g')
-SIRIL="/c/Program Files/Siril/bin/siril-cli.exe"
 cd "$P"
 MOOD_FRAME=${MOOD_FRAME:-1}
 start=${1:-convert}
@@ -18,11 +17,9 @@ for st in "${stages[@]}"; do
   [ $run = 1 ] || continue
   echo "$(date +%H:%M) $st" >> chain.log
   case $st in
-    convert)  [ -f full_00001.fit ] || python $E/convert.py > log_convert.log 2>&1 || fail convert ;;
+    convert)  [ -f full_00001.fit ] || python $E/decode.py > log_convert.log 2>&1 || fail convert ;;
     hot)      python $E/hot.py > log_hot.log 2>&1 || fail hot ;;
-    ground)   rm -f full_.seq; printf 'requires 1.2.0\ncd %s\nsetext fit\nset32bits\nsetcpu 14\nstack full median -nonorm -out=ground\nstack full rej w 3 3 -nonorm -out=ground_mean\n' "$PW" > ground.ssf
-              "$SIRIL" -s "$PW/ground.ssf" > log_ground.log 2>&1; grep -q "Script execution finished successfully" log_ground.log || fail ground
-              cp ground.fit ground_fixed.fit ;;
+    ground)   python $E/stack.py full ground median > log_ground.log 2>&1 && python $E/stack.py full ground_mean sigma >> log_ground.log 2>&1 || fail ground ;;
     mask)     python $E/mask.py > log_mask.log 2>&1 || fail mask ;;
     refine)   python $E/mask_refine.py > log_refine.log 2>&1 || fail refine ;;
     clouds)   python $E/clouds.py > log_clouds.log 2>&1 || fail clouds ;;
@@ -31,8 +28,7 @@ for st in "${stages[@]}"; do
     register) python $E/register.py all > log_register.log 2>&1 || fail register ;;
     fit)      python $E/fitmodel.py > log_fit.log 2>&1 || fail fit ;;
     warp)     rm -f r2_sky_*.fit r2_sky_.seq sky.fit; python $E/warp2.py > log_warp.log 2>&1 || fail warp ;;
-    stack)    printf 'requires 1.2.0\ncd %s\nsetext fit\nset32bits\nsetcpu 14\nstack r2_sky rej w 3 3 -nonorm -rejmap -out=sky\n' "$PW" > stack.ssf
-              "$SIRIL" -s "$PW/stack.ssf" > log_stack.log 2>&1; grep -q "Script execution finished successfully" log_stack.log || fail stack ;;
+    stack)    rm -f r2_sky_.seq; python $E/stack.py r2_sky sky sigma > log_stack.log 2>&1 || fail stack ;;
     pad)      python $E/padstack.py > log_pad.log 2>&1 || fail pad ;;
     count)    python $E/countmap.py > log_count.log 2>&1 || fail count ;;
     tone)     python $E/tone_fit.py 60 0.18 > log_tone.log 2>&1 || fail tone ;;

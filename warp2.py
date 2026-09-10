@@ -75,7 +75,7 @@ def one(i):
 
 def main():
     ox, oy = total_map(np.eye(3))
-    g = fits.getdata(f"{W}/ground_fixed.fit").astype(np.float32)
+    g = fits.getdata(f"{W}/ground.fit").astype(np.float32)
     fits.PrimaryHDU(np.stack([cv2.remap(c, ox, oy, cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_CONSTANT, borderValue=0) for c in g])).writeto(f"{W}/ground_d.fit", overwrite=True)
     mk = np.load(f"{W}/mask_sky.npy").astype(np.uint8)
     np.save(f"{W}/mask_sky_d.npy", cv2.remap(mk, ox, oy, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0)

@@ -13,9 +13,10 @@ composited as stationary background + aligned star layer inside a pixel-accurate
 
 ## Requirements
 
-Windows, Python 3.12 with numpy, scipy, astropy, opencv-python, tifffile, pillow, lensfunpy,
-torch (CUDA build, optional but 5-10x faster for trails and timelapses). Siril 1.2 (`siril-cli`),
-ASTAP with a star database, exiftool, ffmpeg.
+Windows, Python 3.12 with numpy, scipy, astropy, opencv-python, tifffile, pillow, lensfunpy, rawpy,
+torch (CUDA build, optional but 5-10x faster for trails and timelapses). ASTAP with a star database,
+exiftool, ffmpeg. No Siril: LibRaw decodes the raws (`decode.py`) and `stack.py` does the rejection
+stacking in row bands, so a night of any length fits in memory.
 
 ## Use
 
@@ -41,7 +42,7 @@ and fog), reads exposure, timestamps, orientation, white balance, lens, focal le
 factor from EXIF, and writes `project.json`. `--pole` overrides the celestial pole (display pixels);
 `--skyrows` a display row above which everything is certainly sky.
 
-Stages, in order: convert (Siril debayer, rotate to display orientation) → hot (hot-pixel patch) → ground
+Stages, in order: convert (LibRaw debayer to sensor ADU, rotated to display orientation) → hot (hot-pixel patch) → ground
 (median and sigma-clipped static stacks) → mask → refine (pixel-accurate treeline) → clouds →
 reblank → undist → register → fit → warp → stack → pad → count → tone → astap → annotate →
 traffic → mood → print → trails → export → timelapse → encode → deliver. Each writes
@@ -62,8 +63,9 @@ session half-patched.
 ## Read before changing anything
 
 `docs/` is not written yet; the reasoning that produced each stage lives in the module docstrings.
-The things that bit hardest: Siril's own registration cannot handle a 16 mm field beyond ±5°;
-zero pixels are no-data to Siril's rejection stacking; the aligned stack smears the horizon glow
+The things that bit hardest: Siril's own registration cannot handle a 16 mm field beyond ±5°
+(and its convert rewrote every rotated frame, 48 minutes a night, which is why LibRaw replaced it);
+zero pixels are no-data to the rejection stacking; the aligned stack smears the horizon glow
 so the composite background must come from the static stack near the treeline; scipy's
 `binary_erosion(iterations=0)` erodes until nothing is left; FITS rows are stored bottom-up,
 which reverses `np.rot90`; on a 16 mm lens the sky does not turn rigidly in the frame (a pole
