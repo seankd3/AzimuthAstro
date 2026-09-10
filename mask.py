@@ -16,7 +16,7 @@ S = 2                       # work scale
 TIGHTEN = 8                 # full-res px of sky given up at the boundary
 K = float(sys.argv[1]) if len(sys.argv) > 1 else 3.0
 FRAC = float(sys.argv[2]) if len(sys.argv) > 2 else 0.55   # of local sky level
-TMAX = 2.0                  # ADU texture; above this it is lit ground
+SMOOTH = 2.5                # x the sky's own noise; more texture than that is ground
 HI = 2.5                    # of local sky level; brighter than this is a lamp, not sky
 OPEN = 3                    # work-scale px; outline opening
 COARSE = 8                  # work-scale px; region opening that cuts bridges into the lake
@@ -43,7 +43,9 @@ def main():
     Lm = ndi.median_filter(g, 9)
     hy = (H - P.SKY_ROWS) // S                                    # lowest row that is certainly sky
     ref = ndi.uniform_filter1d(np.median(Lm[hy:hy + 40], axis=0), 41)
-    cand = (Lm > FRAC * ref[None, :]) & (Lm < HI * ref[None, :]) & (T < TMAX)   # lamp glow is far brighter than sky
+    sig = float(np.median(T[hy:]))                             # sky texture is photon noise: scales with sqrt(level)
+    smooth = T < SMOOTH * sig * np.sqrt(np.maximum(Lm, 1.0) / ref[None, :])
+    cand = (Lm > FRAC * ref[None, :]) & (Lm < HI * ref[None, :]) & smooth        # lamp glow is far brighter than sky
     cand[hy:] = True
     cand = ndi.binary_closing(cand, disk(2))
     lab, _ = ndi.label(cand)
@@ -58,7 +60,7 @@ def main():
     fine = top_component(ndi.binary_opening(sky, disk(OPEN)))              # outline: tree tips kept
     sky = top_component(fine & ndi.binary_dilation(coarse, disk(COARSE + OPEN)))
     sky = ndi.binary_erosion(sky, disk(TIGHTEN // S))
-    n = 0; sig = float(np.median(T[hy:]))
+    n = 0
     full = np.repeat(np.repeat(sky, S, axis=0), S, axis=1)
     out = np.zeros((H, Wd), bool); out[:full.shape[0], :full.shape[1]] = full
     np.save(f"{W}\\mask_sky.npy", out)

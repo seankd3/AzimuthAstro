@@ -43,8 +43,9 @@ def refine():
     H = m.shape[0]
     low = m[: int(H * 0.15)].mean()                                          # FITS bottom = display bottom
     frac = m.mean()
-    ok = low < 0.005 and 0.2 < frac < 0.95
-    return ok, f"sky fraction {frac:.3f}; sky in bottom 15% {low*100:.2f}% ({'ok' if low < 0.005 else 'LEAK into ground/lake'})"
+    below = m[: H - P.SKY_ROWS].any(axis=0).mean()                           # the certainly-sky row sits above the trees, so sky must go on below it
+    ok = low < 0.005 and 0.2 < frac < 0.95 and below > 0.5
+    return ok, f"sky fraction {frac:.3f}; sky in bottom 15% {low*100:.2f}% ({'ok' if low < 0.005 else 'LEAK into ground/lake'}); sky below the sky row in {below*100:.0f}% of columns{'' if below > 0.5 else ' (CUT AT THE SKY ROW: smoothness test failed)'}"
 
 
 def stack():
