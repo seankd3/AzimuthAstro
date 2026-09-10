@@ -19,9 +19,14 @@ _rho = np.linspace(0, 1.2, 4001)
 _rd = _rho * (1 + k1 * _rho ** 2 + k2 * _rho ** 4)
 
 
-def total_map(Hi, pad=0):
-    """Map from final grid (optionally padded by `pad` px on every side) to original-frame coordinates."""
-    yy, xx = np.mgrid[-pad:R.HEIGHT + pad, -pad:R.WIDTH + pad].astype(np.float32)
+def total_map(Hi, pad=0, scale=1.0):
+    """Map from final grid (optionally padded by `pad` px on every side, optionally at `scale` of full
+    resolution) to original-frame coordinates (always full-resolution units)."""
+    if scale != 1.0:
+        h, w = int(round((R.HEIGHT + 2 * pad) * scale)), int(round((R.WIDTH + 2 * pad) * scale))
+        yy, xx = (np.mgrid[0:h, 0:w].astype(np.float32) / scale) - pad
+    else:
+        yy, xx = np.mgrid[-pad:R.HEIGHT + pad, -pad:R.WIDTH + pad].astype(np.float32)
     Hinv = np.linalg.inv(Hi)
     den = Hinv[2, 0] * xx + Hinv[2, 1] * yy + Hinv[2, 2]
     ux = (Hinv[0, 0] * xx + Hinv[0, 1] * yy + Hinv[0, 2]) / den

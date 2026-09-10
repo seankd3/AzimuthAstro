@@ -42,7 +42,7 @@ for st in "${stages[@]}"; do
     print)    python $E/print.py > log_print.log 2>&1 || echo "FAIL print (non-fatal)" >> chain.log ;;
     trails)   rm -rf trails_frames; if python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then python $E/trails_gpu.py > log_trails.log 2>&1 || fail trails; else python $E/trails.py > log_trails.log 2>&1 || fail trails; fi ;;
     export)   python $E/export_trails.py > log_export.log 2>&1 || echo "FAIL export (non-fatal)" >> chain.log ;;
-    timelapse) rm -rf timelapse_locked timelapse_standard timelapse_clouds; python $E/timelapse.py locked standard clouds > log_timelapse.log 2>&1 || echo "FAIL timelapse (non-fatal)" >> chain.log ;;
+    timelapse) rm -rf timelapse_locked timelapse_standard timelapse_clouds; if python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then python $E/timelapse_gpu.py locked standard clouds > log_timelapse.log 2>&1 || echo "FAIL timelapse (non-fatal)" >> chain.log; else python $E/timelapse.py locked standard clouds > log_timelapse.log 2>&1 || echo "FAIL timelapse (non-fatal)" >> chain.log; fi ;;
     encode)   bash $E/encode.sh > log_encode.log 2>&1 ;;
     deliver)  python $E/deliver.py > log_deliver.log 2>&1 || echo "FAIL deliver (non-fatal)" >> chain.log ;;
   esac
