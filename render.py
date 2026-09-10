@@ -102,8 +102,10 @@ def blend(sky, ground, m):
 
 def feathered_mask(mask, valid, shrink=20, feather=8):
     from scipy import ndimage as ndi
-    m = ndi.binary_erosion(mask & valid, iterations=shrink)
-    return ndi.gaussian_filter(m.astype(np.float32), feather)
+    m = mask & valid
+    if shrink > 0:                                   # scipy reads iterations=0 as "until nothing changes"
+        m = ndi.binary_erosion(m, iterations=shrink)
+    return ndi.gaussian_filter(m.astype(np.float32), feather) if feather > 0 else m.astype(np.float32)
 
 
 # ---- the stationary-background model: only stars rotate, everything else is fixed to the camera
