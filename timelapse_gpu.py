@@ -51,6 +51,12 @@ class Renders:
         return und, locked
 
 
+def rim(img3, r=2):
+    """no-data mask of a warped view, grown r px so the interpolation ring at the border goes with it."""
+    z = (img3[1] <= 0).float()[None, None]
+    return F.max_pool2d(z, 2 * r + 1, 1, r)[0, 0] > 0
+
+
 def warp_half(img3, Hm):
     """warp a device (3,h,w) tensor by a full-res-units homography (output -> source via inverse)."""
     Hs = Rn.scale_H(Hm, SCALE)
@@ -102,14 +108,16 @@ def main(which):
             t = ti + a * (tn - ti)
             if "locked" in which:
                 fa = warp_half(cur[1], Rn.H_at(t) @ np.linalg.inv(Rn.H_FRAME[i]))
+                fa[:, rim(fa)] = 0
                 if a > 0:
                     fb = warp_half(nxt[1], Rn.H_at(t) @ np.linalg.inv(Rn.H_FRAME[i + 1]))
+                    fb[:, rim(fb)] = 0
                     fa = fa * (1 - a) + fb * a
                 save("locked", k_locked, tg.apply(fa - black)); k_locked += 1
             if "standard" in which:
                 skyt = warp_half(cur[1], np.linalg.inv(Rn.H_at(t)))
                 gnd = cur[0] if a == 0 else cur[0] * (1 - a) + nxt[0] * a
-                nodata = skyt[1] <= 0
+                nodata = rim(skyt)
                 skyt = skyt - black; gndl = gnd - black
                 skyt[:, nodata] = gndl[:, nodata]
                 if a == 0:                                                  # background match once per real frame
