@@ -44,6 +44,15 @@ traffic → mood → print → trails → export → timelapse → encode → de
 `log_<stage>.log`; `chain.log` shows progress. Outputs land in the project directory as
 `<name>_*.jpg/.tif/.mp4` and are copied next to the source folder by `deliver`.
 
+## Checks that run by themselves
+
+`gates.py` runs after each stage and fails the run when a check fails; each check is a bug that
+happened once (upside-down rotation, hot-pixel threshold misfire, mask leaking into the lake, stars
+erased by the composite, empty trail layer). `python smoke.py` builds a 12-frame synthetic session
+with a known pole, treeline, lamp, cloud and hot pixels and runs the chain through the composite in
+about 90 seconds; run it before trusting any change. `azastro run` skips stages that already have a
+done marker (`--force` to redo, `--detach` to survive the terminal).
+
 ## Read before changing anything
 
 `docs/` is not written yet; the reasoning that produced each stage lives in the module docstrings.

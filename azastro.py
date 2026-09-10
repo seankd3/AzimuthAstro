@@ -61,10 +61,11 @@ def _peaks(path, orient):
     sm = ndi.gaussian_filter(hp, 1.0)
     pk = (sm == ndi.maximum_filter(sm, 5)) & (sm > 6 * max(sig, 1.0))
     ys, xs = np.nonzero(pk)
-    return np.c_[xs, ys].astype(np.float32), g.shape
+    order = np.argsort(-sm[ys, xs])[:300]                              # the brightest are the reliable ones
+    return np.c_[xs[order], ys[order]].astype(np.float32), g.shape
 
 
-def pole_from_previews(prev, orient, lag=6, pairs=12):
+def pole_from_previews(prev, orient, cadence=30.0, pairs=12):
     """Stars move on circles around the celestial pole: a star's displacement between two previews
     `lag` frames apart is perpendicular to the line from the pole to the star, so every matched pair
     gives one linear equation for the pole. Ground lights do not move and drop out.
@@ -74,6 +75,7 @@ def pole_from_previews(prev, orient, lag=6, pairs=12):
     from scipy import ndimage as ndi
     from PIL import Image
     n = len(prev)
+    lag = int(max(2, min(n // 4, round(300.0 / max(cadence, 1.0)))))    # ~5 min apart: 20-40 px of motion at preview scale
     idx = np.linspace(0, n - 1 - lag, pairs).astype(int)
     A, b = [], []
     shape = None
@@ -81,8 +83,8 @@ def pole_from_previews(prev, orient, lag=6, pairs=12):
         p0, shape = _peaks(prev[k], orient); p1, _ = _peaks(prev[k + lag], orient)
         if len(p0) < 20 or len(p1) < 20:
             continue
-        d, j = cKDTree(p1).query(p0, distance_upper_bound=40)
-        ok = np.isfinite(d) & (d > 2.5)
+        d, j = cKDTree(p1).query(p0, distance_upper_bound=60)
+        ok = np.isfinite(d) & (d > 3.0)
         q, q1 = p0[ok], p1[j[ok]]
         disp = q1 - q                                                        # (q - pole) . disp = 0
         A.append(disp); b.append((disp * q).sum(axis=1))
@@ -175,7 +177,7 @@ def inspect(folder, write_json=True):
     with Pool(6) as p:
         stats = p.map(_preview_stats, [(pv, rows[0]["Orientation"]) for pv in prev])
     stars = np.array([s[0] for s in stats]); sky = np.array([s[1] for s in stats])
-    pole, skyrows, full_w, full_h = pole_from_previews(prev, rows[0]["Orientation"])
+    pole, skyrows, full_w, full_h = pole_from_previews(prev, rows[0]["Orientation"], cadence)
     good = np.ones(n, bool); good[[t - 1 for t in tests]] = False
     clear = np.median(stars[good][: max(10, good.sum() // 3)])
     thr = 0.6 * clear
@@ -254,9 +256,22 @@ def run(args):
         return [SIRIL, "-s", path.replace("\\", "/")]
 
     PW = W.replace("\\", "/")
+    if args.detach:                                                      # survive the terminal: relaunch ourselves detached
+        cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--from", args.frm, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--force"] if args.force else [])
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        with open(os.path.join(W, "run_detached.log"), "a") as lf:
+            proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
+        print(f"detached pid {proc.pid}; follow with: azastro status {args.workdir}")
+        return
+    done_dir = os.path.join(W, ".done"); os.makedirs(done_dir, exist_ok=True)
     for st in STAGES[i0:i1 + 1]:
-        if st == "convert" and os.path.exists(os.path.join(W, "full_00001.fit")):
+        marker = os.path.join(done_dir, st)
+        if os.path.exists(marker) and not args.force:
+            print(f"{st:10s} done earlier, skipped (use --force to redo)")
             continue
+        for later in STAGES[STAGES.index(st):]:                            # everything downstream is stale now
+            try: os.remove(os.path.join(done_dir, later))
+            except OSError: pass
         cmd = {
             "convert": py("convert.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
             "reblank": py("reblank.py"), "undist": py("undist_frames.py"), "register": py("register.py", "all"),
@@ -305,6 +320,7 @@ def run(args):
                 sys.exit(1)
         else:
             print(f"{st:10s} {mins:5.1f} min")
+            open(marker, "w").write(time.strftime("%Y-%m-%d %H:%M"))
     log.write("DONE\n"); log.close()
     print("done:", cfg["name"])
 
@@ -330,6 +346,8 @@ def main():
     p.add_argument("--pole"); p.add_argument("--skyrows", type=int); p.add_argument("--auto", action="store_true")
     p = sub.add_parser("run"); p.add_argument("workdir"); p.add_argument("--from", dest="frm", default="convert", choices=STAGES)
     p.add_argument("--to", default="deliver", choices=STAGES); p.add_argument("--mood-frame", type=int, default=1)
+    p.add_argument("--force", action="store_true", help="redo stages that already have a done marker")
+    p.add_argument("--detach", action="store_true", help="run in a detached process and return")
     p = sub.add_parser("status"); p.add_argument("workdir")
     p = sub.add_parser("deliver"); p.add_argument("workdir")
     a = ap.parse_args()
