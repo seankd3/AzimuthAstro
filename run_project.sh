@@ -40,7 +40,7 @@ for st in "${stages[@]}"; do
     traffic)  python $E/traffic.py > log_traffic.log 2>&1 && python $E/traffic_still.py > log_traffic2.log 2>&1 || echo "FAIL traffic (non-fatal)" >> chain.log ;;
     mood)     python $E/mood.py $MOOD_FRAME 1.0 > log_mood.log 2>&1 || echo "FAIL mood (non-fatal)" >> chain.log ;;
     print)    python $E/print.py > log_print.log 2>&1 || echo "FAIL print (non-fatal)" >> chain.log ;;
-    trails)   rm -rf trails_frames; python $E/trails.py > log_trails.log 2>&1 || fail trails ;;
+    trails)   rm -rf trails_frames; if python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then python $E/trails_gpu.py > log_trails.log 2>&1 || fail trails; else python $E/trails.py > log_trails.log 2>&1 || fail trails; fi ;;
     export)   python $E/export_trails.py > log_export.log 2>&1 || echo "FAIL export (non-fatal)" >> chain.log ;;
     timelapse) rm -rf timelapse_locked timelapse_standard timelapse_clouds; python $E/timelapse.py locked standard clouds > log_timelapse.log 2>&1 || echo "FAIL timelapse (non-fatal)" >> chain.log ;;
     encode)   bash $E/encode.sh > log_encode.log 2>&1 ;;
