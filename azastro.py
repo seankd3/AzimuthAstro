@@ -110,7 +110,7 @@ def run(args):
             "mood": py("mood.py", str(args.mood_frame), "1.0"), "print": py("print.py"),
             "trails": py("trails_gpu.py" if gpu else "trails.py"), "export": py("export_trails.py"),
             "timelapse": py("timelapse_gpu.py" if gpu else "timelapse.py", "locked", "standard", "clouds"),
-            "encode": ["bash", os.path.join(HERE, "encode.sh")], "deliver": py("deliver.py"),
+            "encode": py("encode.py"), "deliver": py("deliver.py"),
             "ground": py("stack.py", "full", "ground", "median"), "stack": py("stack.py", "r2_sky", "sky", "sigma"),
             "traffic": None,
         }[st]

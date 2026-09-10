@@ -2,7 +2,7 @@
 after the stage and fails the run when a gate fails. Every gate here is a bug that actually
 happened once; keep it that way.
 """
-import os, json, glob, numpy as np
+import os, glob, numpy as np
 from astropy.io import fits
 import project as P
 
@@ -28,6 +28,13 @@ def hot():
     """hot pixels must be rare (a fixed threshold once flagged 58% of an ISO 3200 frame)."""
     frac = np.load(f"{W}/hot_mask.npy").mean()
     return frac < 0.002, f"hot pixels {frac*100:.3f}% ({'ok' if frac < 0.002 else 'too many: threshold misfire'})"
+
+
+def encode():
+    """every video is real (a killed encode once delivered a 48-byte mp4)."""
+    vids = glob.glob(f"{W}/{P.NAME}_*_4K.mp4")
+    small = [os.path.basename(v) for v in vids if os.path.getsize(v) < 1e6]
+    return bool(vids) and not small, f"{len(vids)} videos" + (f"; too small: {small}" if small else "")
 
 
 def refine():
@@ -72,7 +79,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "hot": hot, "refine": refine, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):
