@@ -23,9 +23,10 @@ orient = cfg.get("orientation", "Horizontal (normal)")
 k = {"Rotate 90 CW": 1, "Rotate 270 CW": 3, "Rotate 180": 2}.get(orient, 0)   # FITS rows run bottom-up, which reverses np.rot90's CCW sense
 if k:
     for i in range(1, P.N + 1):
+        hdr = fits.getheader(P.full(i))
+        if (hdr["NAXIS2"], hdr["NAXIS1"]) == (P.HEIGHT, P.WIDTH):        # already in display orientation (resumed run)
+            continue
         with fits.open(P.full(i), mode="update") as h:
-            if h[0].data.shape[1:] == (P.HEIGHT, P.WIDTH):            # already in display orientation (resumed run)
-                continue
             h[0].data = np.ascontiguousarray(np.rot90(h[0].data, k=k, axes=(1, 2)))
             h.flush()
     print("rotated", P.N, "frames by", orient, flush=True)
@@ -51,10 +52,11 @@ H, Wd = hot.shape
 offs = [(dy, dx) for dy in range(-2, 3) for dx in range(-2, 3) if (dy, dx) != (0, 0)]
 ny = np.stack([np.clip(hy + dy, 0, H - 1) for dy, dx in offs]); nx = np.stack([np.clip(hx + dx, 0, Wd - 1) for dy, dx in offs])
 for i in range(1, P.N + 1):
-    with fits.open(P.full(i), mode="update") as h:
+    # unscaled memory map: only the hot pixels' bytes change, the file is not rewritten
+    with fits.open(P.full(i), mode="update", memmap=True, do_not_scale_image_data=True) as h:
         d = h[0].data
         for c in range(3):                                           # median of the 24 neighbours, hot pixels only
-            d[c][hy, hx] = np.median(d[c][ny, nx], axis=0).astype(d.dtype)
+            d[c][hy, hx] = np.median(d[c][ny, nx].astype(np.int32), axis=0).astype(d.dtype)
         h.flush()
     if i % 50 == 0:
         print("patched", i, flush=True)
