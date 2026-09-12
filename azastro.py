@@ -4,12 +4,17 @@
   azastro new <workdir> <name> <cr3_folder> [--first N --last M --skip a,b] [--pole x,y] [--skyrows r] [--auto]
   azastro run <workdir> [--from STAGE] [--to STAGE] [--mood-frame N] [--force] [--detach]
   azastro process <workdir> <name> <cr3_folder> [--mood-frame N]     inspect + new --auto + run --detach: a whole night
-  azastro status <workdir>
+  azastro status <workdir>                     current run: stages, gates, last progress line
+  azastro wait <workdir> [--stage S] [--timeout SEC]   block until stage S (or the run) ends; prints only what is new
+  azastro stop <workdir>                       kill the running chain
+  azastro report <workdir>                     numbers that decide a night (gates, fit, clouds, footprint, tone) + report.jpg
   azastro deliver <workdir>
+
+`run` resumes at the first stage without a done marker; `run --from S` redoes S and everything after.
 
 Stage scripts stay standalone (each reads ASTRO_WORK); this file only composes them. session.py reads a night's folder.
 """
-import os, sys, glob, json, time, argparse, subprocess
+import os, re, sys, glob, json, time, argparse, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)                                                # the stages and session.py live beside this file
@@ -76,13 +81,14 @@ def run(args):
     cfg = json.load(open(os.path.join(W, "project.json")))
     gpu = has_cuda()
     log = open(os.path.join(W, "chain.log"), "a")
-    i0, i1 = STAGES.index(args.frm), STAGES.index(args.to)
+    redo = args.frm is not None or args.force                           # --from S: S and everything after is redone
+    i0, i1 = STAGES.index(args.frm or "convert"), STAGES.index(args.to)
 
     def py(name, *a):
         return [sys.executable, os.path.join(HERE, name), *a]
 
     if args.detach:                                                      # survive the terminal: relaunch ourselves detached
-        cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--from", args.frm, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--force"] if args.force else [])
+        cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--from", args.frm] if args.frm else []) + (["--force"] if args.force else [])
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         with open(os.path.join(W, "run_detached.log"), "a") as lf:
             proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
@@ -94,11 +100,13 @@ def run(args):
     open(lock, "w").write(str(os.getpid()))
     import atexit; atexit.register(lambda: os.path.exists(lock) and os.remove(lock))
     done_dir = os.path.join(W, ".done"); os.makedirs(done_dir, exist_ok=True)
+    log.write(f"== run {time.strftime('%Y-%m-%d %H:%M')} from {STAGES[i0]} to {args.to}\n"); log.flush()
     for st in STAGES[i0:i1 + 1]:
         marker = os.path.join(done_dir, st)
-        if os.path.exists(marker) and not args.force:
-            print(f"{st:10s} done earlier, skipped (use --force to redo)")
+        if os.path.exists(marker) and not redo:
+            print(f"{st:10s} done earlier, skipped")
             continue
+        redo = True                                                      # once one stage runs, everything after it is stale
         for later in STAGES[STAGES.index(st):]:                            # everything downstream is stale now
             try: os.remove(os.path.join(done_dir, later))
             except OSError: pass
@@ -144,19 +152,77 @@ def run(args):
             print(f"{st:10s} {mins:5.1f} min")
             open(marker, "w").write(time.strftime("%Y-%m-%d %H:%M"))
     log.write("DONE\n"); log.close()
+    subprocess.run(py("report.py"), env=env)
     print("done:", cfg["name"])
+
+
+def _current(W):
+    """(lines of the current run, running?) from chain.log: everything after the last run header."""
+    path = os.path.join(W, "chain.log")
+    lines = open(path, errors="replace").read().strip().split("\n") if os.path.exists(path) else []
+    starts = [i for i, l in enumerate(lines) if l.startswith("== run")]
+    lines = lines[starts[-1]:] if starts else lines
+    lock = os.path.join(W, "chain.pid")
+    running = os.path.exists(lock) and _alive(int(open(lock).read() or 0))
+    return lines, running
+
+
+def _progress(W, lines):
+    """the last progress line of the stage now running, if any."""
+    stage = [l for l in lines if re.match(r"^\d\d:\d\d [a-z]+$", l)]
+    if not stage:
+        return ""
+    st = stage[-1].split()[-1]
+    lp = os.path.join(W, f"log_{st}.log")
+    if not os.path.exists(lp):
+        return ""
+    tail = open(lp, errors="replace").read()[-300:].replace("\r", "\n").strip().split("\n")
+    return f"  [{st}] {tail[-1][-120:]}" if tail and tail[-1] else ""
 
 
 def status(args):
     W = os.path.abspath(args.workdir)
-    lines = open(os.path.join(W, "chain.log")).read().strip().split("\n") if os.path.exists(os.path.join(W, "chain.log")) else []
-    print("\n".join(lines[-6:]) or "not started")
-    if lines and not lines[-1].startswith(("DONE", "FAIL")):
-        st = lines[-1].split()[-1]
-        lp = os.path.join(W, f"log_{st}.log")
-        if os.path.exists(lp):
-            tail = open(lp, errors="replace").read()[-300:].replace("\r", "\n").strip().split("\n")[-2:]
-            print(f"  [{st}] " + " | ".join(tail))
+    lines, running = _current(W)
+    print("\n".join(lines) or "not started")
+    print(_progress(W, lines) if running else "(not running)")
+
+
+def wait(args):
+    """Block until the run passes `stage` (its gate line or the next stage starts), ends, or fails; print only
+    the lines that appeared meanwhile. Exit 0 done, 1 failed, 3 still running at the timeout."""
+    W = os.path.abspath(args.workdir)
+    seen = len(_current(W)[0])
+    t0 = time.time()
+    after = STAGES[STAGES.index(args.stage) + 1] if args.stage and STAGES.index(args.stage) + 1 < len(STAGES) else None
+    while True:
+        lines, running = _current(W)
+        new = lines[seen:]
+        done = any(l.startswith("DONE") for l in new)
+        failed = any(re.match(r"^FAIL [a-z]+ after [\d.]+ min$", l) for l in new)
+        passed = args.stage and any(l.startswith("  gate ") and f" {args.stage}:" in l or (after and re.match(rf"^\d\d:\d\d {after}$", l)) for l in new)
+        if done or failed or passed or not running or time.time() - t0 > args.timeout:
+            print("\n".join(new) or "(nothing new)")
+            if running and not (done or failed or passed):
+                print(_progress(W, lines)); sys.exit(3)
+            sys.exit(1 if failed or (not running and not done and not passed) else 0)
+        time.sleep(15)
+
+
+def stop(args):
+    W = os.path.abspath(args.workdir)
+    lock = os.path.join(W, "chain.pid")
+    pid = int(open(lock).read() or 0) if os.path.exists(lock) else 0
+    if not pid or not _alive(pid):
+        print("no chain running"); return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    else:
+        os.kill(pid, 15)
+    try: os.remove(lock)
+    except OSError: pass
+    with open(os.path.join(W, "chain.log"), "a") as f:
+        f.write(f"STOPPED {time.strftime('%H:%M')}\n")
+    print(f"stopped pid {pid}")
 
 
 def main():
@@ -166,11 +232,14 @@ def main():
     p = sub.add_parser("new"); p.add_argument("workdir"); p.add_argument("name"); p.add_argument("folder")
     p.add_argument("--first", type=int); p.add_argument("--last", type=int); p.add_argument("--skip", default="")
     p.add_argument("--pole"); p.add_argument("--skyrows", type=int); p.add_argument("--auto", action="store_true")
-    p = sub.add_parser("run"); p.add_argument("workdir"); p.add_argument("--from", dest="frm", default="convert", choices=STAGES)
+    p = sub.add_parser("run"); p.add_argument("workdir"); p.add_argument("--from", dest="frm", default=None, choices=STAGES, help="redo from this stage on")
     p.add_argument("--to", default="deliver", choices=STAGES); p.add_argument("--mood-frame", type=int, default=1)
     p.add_argument("--force", action="store_true", help="redo stages that already have a done marker")
     p.add_argument("--detach", action="store_true", help="run in a detached process and return")
     p = sub.add_parser("status"); p.add_argument("workdir")
+    p = sub.add_parser("wait"); p.add_argument("workdir"); p.add_argument("--stage", choices=STAGES); p.add_argument("--timeout", type=float, default=540)
+    p = sub.add_parser("stop"); p.add_argument("workdir")
+    p = sub.add_parser("report"); p.add_argument("workdir")
     p = sub.add_parser("deliver"); p.add_argument("workdir")
     p = sub.add_parser("process", help="the whole night in one go: inspect, new --auto, run --detach")
     p.add_argument("workdir"); p.add_argument("name"); p.add_argument("folder"); p.add_argument("--mood-frame", type=int, default=1)
@@ -181,14 +250,18 @@ def main():
         new(a)
     elif a.cmd == "process":
         new(argparse.Namespace(workdir=a.workdir, name=a.name, folder=a.folder, first=None, last=None, skip="", pole=None, skyrows=None, auto=True))
-        run(argparse.Namespace(workdir=a.workdir, frm="convert", to="deliver", mood_frame=a.mood_frame, force=False, detach=True))
+        run(argparse.Namespace(workdir=a.workdir, frm=None, to="deliver", mood_frame=a.mood_frame, force=False, detach=True))
     elif a.cmd == "run":
         run(a)
     elif a.cmd == "status":
         status(a)
-    elif a.cmd == "deliver":
+    elif a.cmd == "wait":
+        wait(a)
+    elif a.cmd == "stop":
+        stop(a)
+    elif a.cmd in ("deliver", "report"):
         env = dict(os.environ, ASTRO_WORK=os.path.abspath(a.workdir).replace("\\", "/"))
-        subprocess.run([sys.executable, os.path.join(HERE, "deliver.py")], env=env)
+        subprocess.run([sys.executable, os.path.join(HERE, f"{a.cmd}.py")], env=env)
 
 
 if __name__ == "__main__":

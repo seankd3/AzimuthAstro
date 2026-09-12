@@ -56,8 +56,33 @@ def stack():
     return cover > 0.9, f"stack covers {cover*100:.1f}% of the sky mask"
 
 
+def clouds():
+    """a clear night is mostly clear: the mean cloud fraction over the sky stays small (an absolute
+    threshold once flagged 60% of a clear night and left 41 of 144 frames in the stack)."""
+    z = np.load(f"{W}/clouds.npz")
+    m = z["masks"]
+    sky = np.load(f"{W}/mask_sky.npy")[::8, ::8][: m.shape[1], : m.shape[2]]
+    fr = np.array([mm[sky].mean() for mm in m])
+    hi = [int(z["frames"][i]) for i in np.nonzero(fr > 0.05)[0]]
+    return fr.mean() < 0.25, f"cloud {fr.mean()*100:.1f}% of the sky on average; frames over 5%: {hi[:20]}{' ...' if len(hi) > 20 else ''}"
+
+
+def count():
+    """most of the night reaches most of the sky: median frames per sky pixel."""
+    c = np.load(f"{W}/count_map.npy")
+    m = np.load(f"{W}/mask_sky_d.npy")
+    med = float(np.median(c[m])) if m.any() else 0.0
+    return med >= 0.3 * P.N, f"median {med:.0f} frames per sky pixel of {P.N}"
+
+
 def tone():
-    """composite must keep the stack's stars: count bright peaks in both over the sky mask."""
+    """composite must keep the stack's stars (count bright peaks in both over the sky mask), and the
+    black point is a real black (a black point on empty wedges once gave -2047)."""
+    import json
+    t = json.load(open(f"{W}/tone.json"))
+    black = np.array(t["black"]) * 65535
+    if not (np.abs(black) < 300).all():
+        return False, f"black point {black.round(0).tolist()} ADU: not on data"
     from scipy import ndimage as ndi
     lin = np.load(f"{W}/composite_lin.npy", mmap_mode="r")[1]
     s = fits.getdata(f"{W}/sky.fit").astype(np.float32)[1]
@@ -80,7 +105,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "hot": hot, "refine": refine, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "count": count, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):

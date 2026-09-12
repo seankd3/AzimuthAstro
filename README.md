@@ -28,7 +28,10 @@ python azastro.py process D:/AstroWork/mysky NightName "D:/Pictures/.../lights" 
 python azastro.py inspect "D:/Pictures/.../lights"      # settings drift, cadence, test frames, fog, cloud dips
 python azastro.py new D:/AstroWork/mysky NightName "D:/Pictures/.../lights" --auto
 python azastro.py run D:/AstroWork/mysky                 # every stage; --from/--to to resume or stop early
-python azastro.py status D:/AstroWork/mysky
+python azastro.py status D:/AstroWork/mysky            # current run: stages, gates, last progress line
+python azastro.py wait D:/AstroWork/mysky --stage tone   # block until a stage (or the run) ends; prints only what is new
+python azastro.py report D:/AstroWork/mysky              # the numbers that decide a night + one contact sheet
+python azastro.py stop D:/AstroWork/mysky
 ```
 
 `pip install -e .` puts an `azastro` command on the path (editable install: the stages are scripts
