@@ -8,9 +8,10 @@ from scipy import ndimage as ndi
 import render as Rn
 
 W = Rn.W
-lin = np.load(f"{W}/composite_lin.npy")
-bg = np.load(f"{W}/bg_layer.npy") - Rn.BLACK                # the star-free sky background, already stationary
-mask = np.load(f"{W}/mask_sky_d.npy")
+box = Rn.footprint()                                                       # everything below works inside the data footprint
+lin = Rn.crop(np.load(f"{W}/composite_lin.npy"), box)
+bg = Rn.crop(np.load(f"{W}/bg_layer.npy"), box) - Rn.BLACK                # the star-free sky background, already stationary
+mask = Rn.crop(np.load(f"{W}/mask_sky_d.npy"), box)
 
 SIG = 250 / 8
 msub = mask[::8, ::8].astype(np.float32)
@@ -29,5 +30,5 @@ core = mask
 for c in (0, 2):                                            # neutral sky: R and B medians onto G
     lin[c] += np.median(lin[1][core]) - np.median(lin[c][core])
 tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=core[::7, ::7], path=f"{W}/tone_print.json")
-Rn.save_still("Print", tone.apply(lin), lin)
+Rn.save_still("Print", tone.apply(lin), lin, box=(0, lin.shape[1], 0, lin.shape[2]))
 print("done")
