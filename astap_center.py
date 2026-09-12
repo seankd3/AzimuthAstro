@@ -4,7 +4,8 @@ import json, subprocess, os, numpy as np
 from astropy.io import fits
 import project as P
 
-s = fits.getdata(f"{P.W}/sky.fit")[1].astype(np.float32)
+import render as Rn
+s = Rn.load_sky()[1]
 H, W = s.shape
 cy, cx = H // 2, W // 2
 hh, hw = 800, 1000

@@ -6,13 +6,12 @@ Writes traffic_max.npy (3,H,W float, linear signal), traffic_streaks.json, previ
 and a contact sheet of the top streak frames.
 """
 import os, json, numpy as np, cv2
-from astropy.io import fits
 from scipy import ndimage as ndi
 from PIL import Image
 import render as Rn
 
 W = Rn.W
-sky = Rn.load_fits("sky")
+sky = Rn.load_sky()
 valid = sky[1] > 0
 mask = np.load(f"{W}/mask_sky_d.npy") & valid
 sm = ndi.binary_erosion(mask, iterations=12)
@@ -20,9 +19,9 @@ acc = np.zeros_like(sky)
 streaks = []
 noise = None
 for i in range(1, Rn.P.N + 1):
-    if not os.path.exists(f"{W}/r2_sky_{i:05d}.fit"):                       # frames without a registration are not warped
+    if not os.path.exists(f"{W}/warped/{i:05d}.npy"):                       # frames without a registration are not warped
         continue
-    f = fits.getdata(f"{W}/r2_sky_{i:05d}.fit").astype(np.float32)
+    f = Rn.load_warped(i)
     v = (f[1] > 0) & sm
     res = np.where(v[None], f - sky, 0)
     # the residual noise floor from this frame, once
@@ -62,7 +61,7 @@ Image.fromarray(Rn.to_display(out)[::3, ::3]).save(f"{W}/preview_traffic.jpg", q
 # contact sheet of top 8 streak frames
 tiles = []
 for s in streaks[:8]:
-    f = fits.getdata(f"{W}/r2_sky_{s['frame']:05d}.fit")[1].astype(np.float32)
+    f = Rn.load_warped(s["frame"])[1]
     r0, c0 = max(0, s["row"] - 100), max(0, s["col"] - 100)
     crop = (f - sky[1])[r0:r0 + s["h"] + 200, c0:c0 + s["w"] + 200]
     crop = cv2.resize(np.clip(crop / (noise * 20), 0, 1), (400, 300))[::-1]

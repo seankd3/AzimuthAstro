@@ -1,6 +1,6 @@
 """Two-minute synthetic smoke test of the chain. Builds a small project (1200 x 800 frames) with a
 known star field rotating about a known pole, a jagged treeline, a lit lamp on the shore, a passing
-cloud, hot pixels and noise; writes full_NNNNN.fit + project.json + undist_coords (identity) and runs
+cloud, hot pixels and noise; writes full_NNNNN.fit + project.json (lens "none": no distortion) and runs
 the stages hot..tone through azastro, then checks the recovered pole and the composite.
 
   python smoke.py [workdir]      (default D:/AstroWork/_smoke)
@@ -77,8 +77,6 @@ def main():
         flat = img.reshape(3, -1); flat[:, hot] += 400                     # hot pixels, same place every frame
         raw = np.clip(img + 2047, 0, 16383)                                # raw ADU with black level
         fits.PrimaryHDU(raw[:, ::-1, :].astype(np.uint16)).writeto(f"{W}/full_{i:05d}.fit", overwrite=True)   # FITS rows bottom-up
-    yy, xx = np.mgrid[0:HEI, 0:WID].astype(np.float32)
-    np.save(f"{W}/undist_coords.npy", np.stack([xx, yy], -1))            # no lens distortion in the synthetic frames
     cfg = {"name": "Smoke", "width": WID, "height": HEI, "frame_ids": list(range(1, N + 1)), "ref": ref, "exposure": EXPO,
            "times": [t - times[ref - 1] for t in times], "pole_display": [POLE[0] + 15, POLE[1] - 10], "sky_rows": 400,
            "orientation": "Horizontal (normal)", "wb": [1024, 1024, 1024], "date": "2026-01-01T00:00:00",

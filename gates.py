@@ -50,7 +50,8 @@ def refine():
 
 def stack():
     """the aligned stack has data over most of the sky mask and is not empty."""
-    s = fits.getdata(f"{W}/sky.fit").astype(np.float32)[1]
+    import render as Rn
+    s = Rn.load_sky()[1]
     m = np.load(f"{W}/mask_sky_d.npy")
     cover = (s[m] > 0).mean()
     return cover > 0.9, f"stack covers {cover*100:.1f}% of the sky mask"
@@ -67,7 +68,7 @@ def clouds():
     return fr.mean() < 0.25, f"cloud {fr.mean()*100:.1f}% of the sky on average; frames over 5%: {hi[:20]}{' ...' if len(hi) > 20 else ''}"
 
 
-def count():
+def warp():
     """most of the night reaches most of the sky: median frames per sky pixel."""
     c = np.load(f"{W}/count_map.npy")
     m = np.load(f"{W}/mask_sky_d.npy")
@@ -85,7 +86,8 @@ def tone():
         return False, f"black point {black.round(0).tolist()} ADU: not on data"
     from scipy import ndimage as ndi
     lin = np.load(f"{W}/composite_lin.npy", mmap_mode="r")[1]
-    s = fits.getdata(f"{W}/sky.fit").astype(np.float32)[1]
+    import render as Rn
+    s = Rn.load_sky()[1]
     m = np.load(f"{W}/mask_sky_d.npy")
 
     def peaks(img):
@@ -105,7 +107,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "count": count, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "warp": warp, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):

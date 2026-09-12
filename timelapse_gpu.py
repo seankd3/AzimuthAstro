@@ -7,7 +7,7 @@ import os, sys, time, numpy as np, cv2, torch, torch.nn.functional as F
 from scipy import ndimage as ndi
 from PIL import Image
 import render as Rn
-import warp2
+import warp
 
 W = Rn.W
 SCALE, SUB = 0.5, 4
@@ -38,13 +38,13 @@ class Renders:
     def __init__(self):
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32) / SCALE           # half-res output -> full-res coords
         self.grid_pts = (xx, yy)
-        ox, oy = warp2.total_map(np.eye(3), scale=SCALE)
+        ox, oy = warp.total_map(np.eye(3), scale=SCALE)
         self.ident = to_grid(ox, oy, Rn.WIDTH, Rn.HEIGHT)
 
     def frame(self, i):
         full = torch.from_numpy(Rn.load_full(i)).to(dev)[:, None]
         und = sample3(full, self.ident)
-        ox, oy = warp2.total_map(Rn.H_FRAME[i], scale=SCALE)
+        ox, oy = warp.total_map(Rn.H_FRAME[i], scale=SCALE)
         g = to_grid(ox, oy, Rn.WIDTH, Rn.HEIGHT)
         locked = sample3(full, g)
         del full, g
@@ -88,7 +88,6 @@ def main(which):
         os.makedirs(f"{W}/timelapse_{n}", exist_ok=True)
     tone = Rn.Tone(); tg = ToneGPU(tone)
     mask = np.load(f"{W}/mask_sky_d.npy")
-    sky = Rn.load_fits("sky")
     m = torch.from_numpy(cv2.resize(Rn.feathered_mask(mask, np.ones_like(mask), 0, 1), (w, h), interpolation=cv2.INTER_AREA)).to(dev)[None]
     core = (m[0] > 0.999)
     ground = Rn.downscale(Rn.load_fits("ground_d"), SCALE)

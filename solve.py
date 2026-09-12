@@ -124,7 +124,7 @@ def refine(cam, cat_v, cat_mag, det, tols=(25, 10, 5, 3)):
 
 
 def main():
-    sky = Rn.load_fits("sky")
+    sky = Rn.load_sky()
     det = detect_stack(sky)
     print("detected stars", len(det), flush=True)
     ra, dec, mag = load_catalog()

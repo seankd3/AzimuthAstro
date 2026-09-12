@@ -9,7 +9,7 @@ import json, numpy as np, cv2
 from astropy.io import fits
 import register as R
 import fitmodel as F
-import warp2
+import warp
 
 W = R.W
 NAME = R.P.NAME
@@ -21,7 +21,7 @@ K1, K2, FPX, POLE = float(_m["k1"]), float(_m["k2"]), float(_m["f"]), tuple(_m["
 H_FRAME = _m["H"]                       # index 1..90 (odd CR3 frames), d-space, frame -> reference
 TIMES = R.frame_times()                 # seconds relative to the reference frame (45)
 EXPOSURE = R.P.EXPOSURE
-PAD = int(round(0.085 * R.WIDTH))          # padded-canvas ring: enough for the sky rotation over a night at 16mm
+PAD = warp.PAD
 P = R.P
 
 
@@ -54,6 +54,18 @@ def load_fits(name):
     return fits.getdata(f"{W}/{name}.fit").astype(np.float32)          # (3,H,W)
 
 
+def load_warped(i):
+    """warped frame i in reference geometry (the centre of its padded canvas), float32 0..1."""
+    p = np.load(f"{W}/warped/{i:05d}.npy", mmap_mode="r")
+    return np.array(p[:, PAD:PAD + HEIGHT, PAD:PAD + WIDTH], np.float32)
+
+
+def load_sky():
+    """the aligned sky stack in reference geometry: the centre of the padded stack."""
+    p = np.load(f"{W}/padded_stack.npy", mmap_mode="r")
+    return np.array(p[:, PAD:PAD + HEIGHT, PAD:PAD + WIDTH], np.float32)
+
+
 def load_full(i):
     """Original-geometry sharp frame i (1..90), float 0..1."""
     return fits.getdata(R.P.full(i)).astype(np.float32) / 65535.0
@@ -66,7 +78,7 @@ def scale_H(Hm, s):
 
 def to_d(img, Hm=np.eye(3), scale=1.0, interp=cv2.INTER_LANCZOS4):
     """Original-geometry (3,H,W) -> reference geometry at `scale` (3, H*s, W*s)."""
-    ox, oy = warp2.total_map(Hm)
+    ox, oy = warp.total_map(Hm)
     if scale != 1.0:
         h, w = int(round(HEIGHT * scale)), int(round(WIDTH * scale))
         ox = cv2.resize(ox, (w, h), interpolation=cv2.INTER_LINEAR) * scale

@@ -39,11 +39,6 @@ FOCAL = float(_cfg.get("focal", 16.0))
 CROP = float(_cfg.get("crop", 1.0))          # 35 mm crop factor
 
 
-def light(i):
-    """Blanked (ground/cloud = 0) frame i, original geometry."""
-    return f"{W}/light_{IDS[i - 1]:05d}.fit"
-
-
 def full(i):
     """Unblanked, hot-patched frame i, original geometry."""
     return f"{W}/full_{IDS[i - 1]:05d}.fit"

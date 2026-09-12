@@ -14,13 +14,13 @@
 
 Stage scripts stay standalone (each reads ASTRO_WORK); this file only composes them. session.py reads a night's folder.
 """
-import os, re, sys, glob, json, time, argparse, subprocess
+import os, re, sys, json, time, argparse, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)                                                # the stages and session.py live beside this file
 from session import inspect
-STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "reblank", "undist", "register", "fit", "warp", "stack",
-          "pad", "count", "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
+STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "register", "fit", "warp", "stack",
+          "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
 NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "encode", "deliver"}
 
 
@@ -112,30 +112,25 @@ def run(args):
             except OSError: pass
         cmd = {
             "convert": py("decode.py"), "hot": py("hot.py"), "mask": py("mask.py"), "refine": py("mask_refine.py"), "clouds": py("clouds.py"),
-            "reblank": py("reblank.py"), "undist": py("undist_frames.py"), "register": py("register.py", "all"),
-            "fit": py("fitmodel.py"), "warp": py("warp2.py"), "pad": py("padstack.py"), "count": py("countmap.py"),
+            "register": py("register.py", "all"), "fit": py("fitmodel.py"), "warp": py("warp.py"),
             "tone": py("tone_fit.py", "60", "0.18"), "astap": py("astap_center.py"), "annotate": py("solve.py"),
             "mood": py("mood.py", str(args.mood_frame), "1.0"), "print": py("print.py"),
             "trails": py("trails_gpu.py" if gpu else "trails.py"), "export": py("export_trails.py"),
             "timelapse": py("timelapse_gpu.py" if gpu else "timelapse.py", "locked", "standard", "clouds"),
             "encode": py("encode.py"), "deliver": py("deliver.py"),
-            "ground": py("stack.py", "full", "ground", "median"), "stack": py("stack.py", "r2_sky", "sky", "sigma"),
+            "ground": py("stack.py", "full_[0-9]*.fit", "ground.fit", "median"), "stack": py("stack.py", "warped/*.npy", "padded_stack.npy", "sigma"),
             "traffic": None,
         }[st]
         log.write(f"{time.strftime('%H:%M')} {st}\n"); log.flush()
         t0 = time.time()
         with open(os.path.join(W, f"log_{st}.log"), "w") as lf:
-            if st == "warp":
-                for f in glob.glob(os.path.join(W, "r2_sky_*.fit")) + [os.path.join(W, "sky.fit")]:
-                    try: os.remove(f)
-                    except OSError: pass
             if st == "traffic":
                 rc = subprocess.run(py("traffic.py"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
                 rc = rc or subprocess.run(py("traffic_still.py"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
             else:
                 rc = subprocess.run(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
             if st == "ground" and rc == 0:
-                rc = subprocess.run(py("stack.py", "full", "ground_mean", "sigma"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
+                rc = subprocess.run(py("stack.py", "full_[0-9]*.fit", "ground_mean.fit", "sigma"), env=env, stdout=lf, stderr=subprocess.STDOUT).returncode
         mins = (time.time() - t0) / 60
         if rc == 0:
             gate = subprocess.run([sys.executable, os.path.join(HERE, "gates.py"), st], env=env, capture_output=True, text=True).stdout.strip()

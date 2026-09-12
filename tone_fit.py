@@ -4,7 +4,7 @@ usage: python tone_fit.py [a] [sky_target]
 """
 import sys, numpy as np, render as Rn
 from PIL import Image
-sky = Rn.load_fits("sky"); ground = Rn.load_fits("ground_d"); ground_mean = Rn.load_fits("ground_mean_d")
+sky = Rn.load_sky(); ground = Rn.load_fits("ground_d"); ground_mean = Rn.load_fits("ground_mean_d")
 mask = np.load(f"{Rn.W}/mask_sky_d.npy")
 count = np.load(f"{Rn.W}/count_map.npy")
 stars, bg, resid = Rn.backgrounds(sky, ground, mask, count)
