@@ -186,7 +186,7 @@ def annotate(cam, scale=0.5):
         draw.line([(x - 16, y), (x + 16, y)], fill=col, width=2); draw.line([(x, y - 16), (x, y + 16)], fill=col, width=2)
         draw.text((x + 20, y - 20), nm, fill=col, font=small, anchor="lm")
     # bright star names
-    names_map = json.load(open(f"{W}/sky_data/starnames.json", encoding="utf-8"))
+    names_map = json.load(open(f"{SKY}/starnames.json", encoding="utf-8"))
     st = json.load(open(f"{SKY}/stars.6.json", encoding="utf-8"))
     for f in st["features"]:
         if f["properties"]["mag"] > 2.6:
