@@ -28,7 +28,7 @@ def main(which):
         os.makedirs(f"{W}/timelapse_{n}", exist_ok=True)
     tone = Rn.Tone()
     mask = np.load(f"{W}/mask_sky_d.npy")
-    sky = Rn.load_fits("sky")
+    sky = Rn.load_sky()
     m_full = Rn.feathered_mask(mask, sky[1] > 0)
     h, w = int(round(Rn.HEIGHT * SCALE)), int(round(Rn.WIDTH * SCALE))
     m = cv2.resize(m_full, (w, h), interpolation=cv2.INTER_AREA)

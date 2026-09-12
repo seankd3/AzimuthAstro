@@ -21,8 +21,8 @@ def _sample(img3, gx, gy, mode):
     grid = torch.empty((1, gx.shape[0], gx.shape[1], 2), dtype=torch.float32, device="cuda")
     grid[0, ..., 0] = torch.from_numpy(gx).cuda() * (2.0 / (Ws - 1)) - 1.0
     grid[0, ..., 1] = torch.from_numpy(gy).cuda() * (2.0 / (Hs - 1)) - 1.0
-    out = np.empty((3,) + gx.shape, np.float32)
-    for c in range(3):
+    out = np.empty((img3.shape[0],) + gx.shape, np.float32)
+    for c in range(img3.shape[0]):
         src = torch.from_numpy(np.ascontiguousarray(img3[c])).cuda()[None, None]
         res = F.grid_sample(src, grid, mode=mode, padding_mode="zeros", align_corners=True)
         out[c] = res[0, 0].clamp_(min=0).cpu().numpy()

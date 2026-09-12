@@ -41,6 +41,20 @@ def find_lens(model):
     return hits[0] if hits else None
 
 
+def undistort_points(pts, coords):
+    """source (distorted) positions -> corrected positions, by inverting the radial map `coords`
+    ((h, w, 2), source pixel of each corrected pixel) along the diagonal."""
+    h, w = coords.shape[:2]
+    c = np.array([(w - 1) / 2, (h - 1) / 2], np.float32)
+    t = np.linspace(0, 1, 2000)
+    ux, uy = c[0] + t * (w - 1 - c[0]), c[1] + t * (h - 1 - c[1])           # corrected radii along the diagonal ...
+    src = coords[np.round(uy).astype(int), np.round(ux).astype(int)]
+    r_u = np.hypot(ux - c[0], uy - c[1]); r_s = np.hypot(src[:, 0] - c[0], src[:, 1] - c[1])   # ... and their source radii
+    r = np.linalg.norm(pts - c, axis=1)
+    scale = np.interp(r, r_s, r_u) / np.maximum(r, 1e-6)
+    return c + (pts - c) * scale[:, None]
+
+
 def undist_map(w, h, model, focal):
     """(h, w, 2): for each corrected pixel the source pixel (x, y); identity when the lens is unknown."""
     lens = find_lens(model)

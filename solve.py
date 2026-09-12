@@ -64,12 +64,24 @@ class Camera:
 
 
 def initial_camera():
-    pole = np.array([Rn.POLE[0] - R.CX, Rn.POLE[1] - R.CY, -Rn.FPX]); pole /= np.linalg.norm(pole)
-    centre = np.array([0.0, 0.0, -1.0])
-    ra, dec = precess(*ASTAP_CENTER)
-    sky = np.stack([radec_vec(0, 90), radec_vec(ra, dec)])
-    cam = np.stack([pole, centre])
-    return Camera(kabsch(sky, cam), Rn.FPX, R.CX, R.CY, 0.0, 0.0)
+    """Rotation from ASTAP's solve of the central crop: its WCS gives the sky direction of any crop
+    pixel, so the centre and four points around it (plus the pole at its stacked position) pin the
+    orientation even when the pole sits at the frame centre and two anchors would be nearly the same."""
+    from astropy.wcs import WCS
+    from astropy.io import fits as _fits
+    hdr = _fits.Header.fromtextfile(f"{W}/astap_crop.wcs")
+    w = WCS(hdr)
+    hh, hw = 800, 1000                                                  # the crop astap_center.py solved
+    f0 = 1.0 / np.radians(Rn.P.ASTAP_SCALE) if Rn.P.ASTAP_SCALE else Rn.FPX   # the stack's measured scale, not the model's focal
+    cy, cx = R.HEIGHT // 2, R.WIDTH // 2
+    crop_px = np.array([[hw, hh], [hw + 600, hh], [hw - 600, hh], [hw, hh + 500], [hw, hh - 500]], float)
+    world = w.pixel_to_world(crop_px[:, 0], crop_px[:, 1])
+    ra, dec = precess(world.ra.deg, world.dec.deg)
+    sky = np.concatenate([radec_vec(0, 90)[None], radec_vec(ra, dec)])
+    full = crop_px + [cx - hw, cy - hh]                                # crop pixel -> stack pixel (FITS orientation)
+    cam = np.concatenate([[[Rn.POLE[0] - R.CX, Rn.POLE[1] - R.CY, -f0]], np.c_[full[:, 0] - R.CX, full[:, 1] - R.CY, np.full(len(full), -f0)]])
+    cam /= np.linalg.norm(cam, axis=1, keepdims=True)
+    return Camera(kabsch(sky, cam), f0, R.CX, R.CY, 0.0, 0.0)
 
 
 def detect_stack(sky):
@@ -124,7 +136,7 @@ def refine(cam, cat_v, cat_mag, det, tols=(25, 10, 5, 3)):
 
 
 def main():
-    sky = Rn.load_fits("sky")
+    sky = Rn.load_sky()
     det = detect_stack(sky)
     print("detected stars", len(det), flush=True)
     ra, dec, mag = load_catalog()

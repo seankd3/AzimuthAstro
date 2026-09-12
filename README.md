@@ -54,10 +54,16 @@ factor from EXIF, and writes `project.json`. `--pole` overrides the celestial po
 
 Stages, in order: convert (LibRaw debayer to sensor ADU, rotated to display orientation) → hot (hot-pixel patch) → ground
 (median and sigma-clipped static stacks) → mask → refine (pixel-accurate treeline) → clouds →
-reblank → undist → register → fit → warp → stack → pad → count → tone → astap → annotate →
-traffic → mood → print → trails → export → timelapse → encode → deliver. Each writes
+register (stars from the decoded frames, positions lens-corrected, never the images) → fit → warp
+(one resampling per frame onto the padded canvas, on the GPU) → stack → tone → astap → annotate →
+traffic → mood → print → trails → export → timelapse → encode → deliver. A frame is read once and
+warped once; nothing between decode and the stack is written but the warped frames. Each writes
 `log_<stage>.log`; `chain.log` shows progress. Outputs land in the project directory as
 `<name>_*.jpg/.tif/.mp4` and are copied next to the source folder by `deliver`.
+
+The work directory must sit on a drive that writes fast: a night writes about 40 GB of decoded frames
+and 50 GB of warped float16 frames, and nothing else in the chain costs as much as a slow write (a
+drive writing at 35 MB/s turned a 15-minute warp into an hour).
 
 ## Checks that run by themselves
 
