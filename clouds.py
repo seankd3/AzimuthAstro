@@ -1,6 +1,7 @@
 """Per-frame cloud masks. Sentence: a cloud is sky that is brighter than that same
 patch of sky is in the clear frames (the light-pollution gradient is fixed in camera
-coordinates, clouds are not).
+coordinates, clouds are not), after the frame's own smooth brightness drift (the whole
+sky brightening or darkening through the night) is taken out.
 
 Writes clouds.npz: masks (N, H/8, W/8) bool True = cloud, frames (N,) frame numbers,
 and preview_clouds.jpg.
@@ -13,7 +14,7 @@ from PIL import Image
 import project as P
 W = P.W
 B = 8                       # block size
-THR = 1.5                   # ADU above baseline
+THR = 1.5                   # ADU above baseline, or 4 x the frame's own noise if that is more
 DILATE = 3                  # blocks
 MIN_BLOCKS = 200            # smaller patches are not clouds
 FRAMES = list(P.IDS)
@@ -34,10 +35,22 @@ def main():
     small = np.array(small)                                    # (N, h, w), FITS orientation
     base = np.percentile(small, 25, axis=0)
     excess = small - base
-    masks = excess > THR
     sky = np.load(W + "/mask_sky.npy")[::B, ::B]
-    sky = sky[: masks.shape[1], : masks.shape[2]]
-    masks &= sky[None]
+    sky = sky[: excess.shape[1], : excess.shape[2]]
+    yy, xx = np.mgrid[: sky.shape[0], : sky.shape[1]].astype(np.float32)
+    yy, xx = yy / sky.shape[0], xx / sky.shape[1]
+    A = np.stack([np.ones_like(xx), xx, yy, xx * xx, xx * yy, yy * yy], -1)          # a smooth surface per frame
+    masks = np.zeros(excess.shape, bool)
+    for i in range(len(excess)):
+        e = excess[i]
+        keep = sky.copy()
+        for _ in range(3):                                                        # fit the clear sky: clouds are the bright outliers
+            c = np.linalg.lstsq(A[keep], e[keep], rcond=None)[0]
+            r = e - A @ c
+            sig = 1.4826 * np.median(np.abs(r[sky] - np.median(r[sky])))
+            keep = sky & (r < 2 * sig)
+        excess[i] = r
+        masks[i] = sky & (r > max(THR, 4 * sig))
     for i in range(len(masks)):                                 # keep only extended patches
         lab, n = ndi.label(masks[i])
         if n:
