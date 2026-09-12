@@ -61,6 +61,10 @@ warped once; nothing between decode and the stack is written but the warped fram
 `log_<stage>.log`; `chain.log` shows progress. Outputs land in the project directory as
 `<name>_*.jpg/.tif/.mp4` and are copied next to the source folder by `deliver`.
 
+The work directory must sit on a drive that writes fast: a night writes about 40 GB of decoded frames
+and 50 GB of warped float16 frames, and nothing else in the chain costs as much as a slow write (a
+drive writing at 35 MB/s turned a 15-minute warp into an hour).
+
 ## Checks that run by themselves
 
 `gates.py` runs after each stage and fails the run when a check fails; each check is a bug that
