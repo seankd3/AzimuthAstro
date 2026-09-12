@@ -76,7 +76,11 @@ zero pixels are no-data to the rejection stacking; the aligned stack smears the 
 so the composite background must come from the static stack near the treeline; scipy's
 `binary_erosion(iterations=0)` erodes until nothing is left; FITS rows are stored bottom-up,
 which reverses `np.rot90`; on a 16 mm lens the sky does not turn rigidly in the frame (a pole
-40° off-axis moves stars 10-20% differently across the field), so any rigid-rotation fit fails.
+40° off-axis moves stars 10-20% differently across the field), so any rigid-rotation fit fails. Every threshold on brightness or texture must be relative to the frame's own measured noise
+and drift: an absolute 2 ADU texture test and a 1.5 ADU cloud test, both tuned on one night's CRAW
+frames, cut the next night's mask straight across and flagged 60% of its clear sky as cloud. And image
+statistics (the tone black point) are taken inside the data footprint, never over the empty wedges the
+fitted distortion leaves at the edges.
 
 ## Credits
 
