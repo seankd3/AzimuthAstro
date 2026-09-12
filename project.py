@@ -32,6 +32,7 @@ TIMES = {i + 1: float(t) for i, t in enumerate(_cfg["times"])}
 POLE_DISPLAY = tuple(_cfg["pole_display"])
 SKY_ROWS = int(_cfg["sky_rows"])
 ASTAP_CENTER = tuple(_cfg.get("astap_center", (0.0, 0.0)))
+ASTAP_SCALE = float(_cfg.get("astap_scale", 0.0))           # deg/px of the stack at its centre, from the ASTAP crop solve
 DATE = _cfg.get("date", "2000-01-01T00:00:00")
 WB = tuple(_cfg.get("wb", (1659, 1024, 2378)))
 LENS = _cfg.get("lens", "RF16mm F2.8 STM")
