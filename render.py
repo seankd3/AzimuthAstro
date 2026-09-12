@@ -203,3 +203,34 @@ class Tone:
 def to_display(img8):
     """(3,H,W) uint8 FITS orientation -> (H,W,3) top-down RGB."""
     return np.moveaxis(img8, 0, -1)[::-1]
+
+
+def footprint():
+    """(r0, r1, c0, c1): the largest axis-aligned box of the reference geometry that holds data on every
+    border line. The undistortion and the fitted model leave empty wedges at the frame edges."""
+    g = load_fits("ground_d")[1] > 0
+    r0, r1, c0, c1 = 0, g.shape[0], 0, g.shape[1]
+    while r1 - r0 > 2 and c1 - c0 > 2:
+        empty = [(~g[r0, c0:c1]).sum(), (~g[r1 - 1, c0:c1]).sum(), (~g[r0:r1, c0]).sum(), (~g[r0:r1, c1 - 1]).sum()]
+        if max(empty) == 0:
+            break
+        k = int(np.argmax(empty))                                        # shrink the side with the most empty pixels
+        r0, r1, c0, c1 = r0 + (k == 0), r1 - (k == 1), c0 + (k == 2), c1 - (k == 3)
+    return r0, r1, c0, c1
+
+
+def crop(a, box=None):
+    r0, r1, c0, c1 = box or footprint()
+    return a[..., r0:r1, c0:c1]
+
+
+def save_still(name, img8, lin=None, box=None):
+    """{NAME}_{name}.jpg from an 8-bit (3,H,W) image and, when lin is given, a 16-bit linear TIFF with the
+    as-shot white balance, both cropped to the data footprint."""
+    import tifffile
+    from PIL import Image
+    box = box or footprint()
+    Image.fromarray(to_display(crop(img8, box))).save(f"{W}/{NAME}_{name}.jpg", quality=94)
+    if lin is not None:
+        lin16 = np.clip(crop(lin, box) * 65535.0 * 4.0 * WB[:, None, None], 0, 65535).astype(np.uint16)
+        tifffile.imwrite(f"{W}/{NAME}_{name}.tif", np.moveaxis(lin16, 0, -1)[::-1], photometric="rgb", compression="zlib")

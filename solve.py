@@ -4,7 +4,7 @@ sky point; catalog stars then refine everything by least squares across all 97 d
 
 Writes astrometry.json and {Rn.NAME}_Annotated.jpg (half resolution).
 """
-import json, numpy as np, cv2
+import os, json, numpy as np, cv2
 from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 from scipy import ndimage as ndi
@@ -13,6 +13,7 @@ import register as R
 import render as Rn
 
 W = Rn.W
+SKY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sky_data")      # d3-celestial catalogues
 DATE = Rn.P.DATE
 ASTAP_CENTER = Rn.P.ASTAP_CENTER      # RA, Dec deg of pixel (1000.5, 800.5) of the crop = frame centre
 R0 = np.hypot(R.CX, R.CY)
@@ -94,7 +95,7 @@ def detect_stack(sky):
 
 
 def load_catalog():
-    st = json.load(open(f"{W}/sky_data/stars.6.json", encoding="utf-8"))
+    st = json.load(open(f"{SKY}/stars.6.json", encoding="utf-8"))
     ra = np.array([f["geometry"]["coordinates"][0] for f in st["features"]], float) % 360
     dec = np.array([f["geometry"]["coordinates"][1] for f in st["features"]], float)
     mag = np.array([f["properties"]["mag"] for f in st["features"]], float)
@@ -150,7 +151,7 @@ def annotate(cam, scale=0.5):
         return np.c_[pr[:, 0] * scale, H - 1 - pr[:, 1] * scale], ok
     font = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 30)
     small = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 22)
-    lines = json.load(open(f"{W}/sky_data/constellations.lines.json", encoding="utf-8"))
+    lines = json.load(open(f"{SKY}/constellations.lines.json", encoding="utf-8"))
     for f in lines["features"]:
         for seg in f["geometry"]["coordinates"]:
             seg = np.array(seg, float)
@@ -162,14 +163,14 @@ def annotate(cam, scale=0.5):
                     draw.line([tuple(pts[a]), tuple(pts[b])], fill=(120, 200, 255, 120), width=2)
                     for q in (a, b):
                         draw.ellipse([pts[q][0] - 4, pts[q][1] - 4, pts[q][0] + 4, pts[q][1] + 4], outline=(120, 200, 255, 160), width=1)
-    names = json.load(open(f"{W}/sky_data/constellations.json", encoding="utf-8"))
+    names = json.load(open(f"{SKY}/constellations.json", encoding="utf-8"))
     for f in names["features"]:
         ra, dec = precess(f["geometry"]["coordinates"][0] % 360, f["geometry"]["coordinates"][1])
         pts, ok = px(ra, dec)
         x, y = pts[0]
         if ok[0] and 0 < x < im.width and 0 < y < H:
             draw.text((x, y), f["properties"]["name"], fill=(160, 220, 255, 200), font=font, anchor="mm")
-    dsos = json.load(open(f"{W}/sky_data/dsos.bright.json", encoding="utf-8"))
+    dsos = json.load(open(f"{SKY}/dsos.bright.json", encoding="utf-8"))
     for f in dsos["features"]:
         ra, dec = precess(f["geometry"]["coordinates"][0] % 360, f["geometry"]["coordinates"][1])
         pts, ok = px(ra, dec)
@@ -186,7 +187,7 @@ def annotate(cam, scale=0.5):
         draw.text((x + 20, y - 20), nm, fill=col, font=small, anchor="lm")
     # bright star names
     names_map = json.load(open(f"{W}/sky_data/starnames.json", encoding="utf-8"))
-    st = json.load(open(f"{W}/sky_data/stars.6.json", encoding="utf-8"))
+    st = json.load(open(f"{SKY}/stars.6.json", encoding="utf-8"))
     for f in st["features"]:
         if f["properties"]["mag"] > 2.6:
             continue

@@ -80,4 +80,4 @@ which reverses `np.rot90`; on a 16 mm lens the sky does not turn rigidly in the 
 
 ## Credits
 
-`lensfun-mil-canon.xml` is an extract of the [lensfun](https://lensfun.github.io/) database (CC BY-SA 3.0), edited to database version 1 for lensfunpy.
+`sky_data/` holds the star, constellation and deep-sky catalogues of [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3), used for the annotated frame. `lensfun-mil-canon.xml` is an extract of the [lensfun](https://lensfun.github.io/) database (CC BY-SA 3.0), edited to database version 1 for lensfunpy.

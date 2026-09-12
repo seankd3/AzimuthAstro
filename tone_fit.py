@@ -18,9 +18,10 @@ np.save(f"{Rn.W}/composite_lin.npy", lin.astype(np.float32))
 a = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
 target = float(sys.argv[2]) if len(sys.argv) > 2 else 0.18
 core = mask & (sky[1] > 0)
-t = Rn.Tone.fit(lin, a=a, sky_mask=core[::7, ::7], sky_target=target)
-print("tone black", t.black * 65535, "white", t.white[0] * 65535, "a", a)
-img = Rn.to_display(t.apply(lin))
+box = Rn.footprint()                                                       # statistics over data, not the empty wedges
+t = Rn.Tone.fit(Rn.crop(lin, box), a=a, sky_mask=Rn.crop(core, box)[::7, ::7], sky_target=target)
+print("tone black", t.black * 65535, "white", t.white[0] * 65535, "a", a, "footprint", box)
+img = Rn.to_display(Rn.crop(t.apply(lin), box))
 Image.fromarray(img[::4, ::4]).save(f"{Rn.W}/preview_tone.jpg", quality=92)
 rows = (~mask[::-1][:, 60:-60]).any(axis=1).nonzero()[0]; rows = rows[rows > 60]   # display rows holding ground (not the eroded border)
 r0 = max(0, (int(rows.min()) if len(rows) else img.shape[0] // 2) - img.shape[0] // 14)

@@ -3,9 +3,8 @@ masked smoothing of the star-free background, removed at 80% so some natural hor
 neutralise the sky colour, and stretch with a print-strength curve.
 Writes {Rn.NAME}_Print.jpg and {Rn.NAME}_Print_linear.tif (16-bit).
 """
-import numpy as np, cv2, tifffile
+import numpy as np, cv2
 from scipy import ndimage as ndi
-from PIL import Image
 import render as Rn
 
 W = Rn.W
@@ -30,8 +29,5 @@ core = mask
 for c in (0, 2):                                            # neutral sky: R and B medians onto G
     lin[c] += np.median(lin[1][core]) - np.median(lin[c][core])
 tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=core[::7, ::7], path=f"{W}/tone_print.json")
-img8 = tone.apply(lin)
-Image.fromarray(Rn.to_display(img8)).save(f"{W}/{Rn.NAME}_Print.jpg", quality=94)
-lin16 = np.clip(lin * 65535.0 * 4.0 * Rn.WB[:, None, None], 0, 65535).astype(np.uint16)
-tifffile.imwrite(f"{W}/{Rn.NAME}_Print_linear.tif", np.moveaxis(lin16, 0, -1)[::-1], photometric="rgb", compression="zlib")
+Rn.save_still("Print", tone.apply(lin), lin)
 print("done")

@@ -5,7 +5,7 @@ night on one clean sky. Also scores each frame's longest streak so meteor candid
 Writes traffic_max.npy (3,H,W float, linear signal), traffic_streaks.json, preview_traffic.jpg,
 and a contact sheet of the top streak frames.
 """
-import json, numpy as np, cv2
+import os, json, numpy as np, cv2
 from astropy.io import fits
 from scipy import ndimage as ndi
 from PIL import Image
@@ -20,6 +20,8 @@ acc = np.zeros_like(sky)
 streaks = []
 noise = None
 for i in range(1, Rn.P.N + 1):
+    if not os.path.exists(f"{W}/r2_sky_{i:05d}.fit"):                       # frames without a registration are not warped
+        continue
     f = fits.getdata(f"{W}/r2_sky_{i:05d}.fit").astype(np.float32)
     v = (f[1] > 0) & sm
     res = np.where(v[None], f - sky, 0)
