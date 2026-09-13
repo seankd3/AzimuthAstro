@@ -74,11 +74,13 @@ class ToneGPU:
 
     def __init__(self, tone):
         self.black = torch.tensor(tone.black, device=dev)[:, None, None]
-        self.scale = torch.tensor(Rn.WB / (tone.white * Rn.WB[1]), device=dev)[:, None, None]
+        self.scale = torch.tensor(tone.wb / tone.white, device=dev)[:, None, None]
+        self.cam = torch.tensor(Rn.CAM, device=dev)
         self.a = float(tone.a); self.norm = float(np.arcsinh(tone.a))
 
     def apply(self, lin):
-        x = ((lin - self.black) * self.scale).clamp_(0, 1)
+        x = (lin - self.black) * self.scale
+        x = torch.einsum("ij,jhw->ihw", self.cam.to(x.dtype), x).clamp_(0, 1)   # camera RGB -> sRGB
         y = (torch.asinh(x * self.a) / self.norm).clamp_(0, 1).pow_(1 / 1.15)
         return (y * 255).to(torch.uint8).cpu().numpy()
 

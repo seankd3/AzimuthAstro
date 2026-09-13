@@ -48,6 +48,8 @@ for i in range(1, Rn.P.N + 1):
         streaks.append(best)
     print(f"frame {i:2d} noise {noise*65535:.2f} ADU streak {best['length'] if best else 0:.0f}", flush=True)
 
+acc -= np.median(acc[:, sm][:, ::53], axis=1)[:, None, None]        # a max over N frames always floats on a noise floor;
+np.clip(acc, 0, None, out=acc)                                      # what stands above it is the traffic
 np.save(f"{W}/traffic_max.npy", acc)
 streaks.sort(key=lambda s: -s["length"])
 json.dump(streaks, open(f"{W}/traffic_streaks.json", "w"), indent=1)

@@ -10,5 +10,5 @@ box = Rn.footprint()
 for name in ("gapless", "comet"):
     tr = np.load(f"{W}/trails_{name}.npy")
     lin = Rn.compose(tr, bg, ground, mask, resid, valid)
-    Rn.save_still(f"Trails_{name}", tone.apply(lin), lin, box)
+    Rn.save_still(f"Trails_{name}", tone, lin, box)
     print("wrote", name)

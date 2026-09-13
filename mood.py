@@ -17,5 +17,5 @@ layer = np.stack([ndi.gaussian_filter(ndi.median_filter(c[::2, ::2], 5), 2) for 
 layer = np.stack([np.kron(c, np.ones((2, 2), np.float32))[:mask.shape[0], :mask.shape[1]] for c in layer])
 layer = np.clip(layer, 0, None)
 lin = np.load(f"{W}/composite_lin.npy") + gain * layer
-Rn.save_still(f"Mood_f{i}", Rn.Tone().apply(lin), lin)
+Rn.save_still(f"Mood_f{i}", Rn.Tone(), lin)
 print("wrote mood", i)

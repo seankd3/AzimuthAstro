@@ -1,7 +1,7 @@
 """Finished print version. Sentence: take the composite, flatten its sky background (large-scale
 masked smoothing of the star-free background, removed at 80% so some natural horizon glow stays),
-neutralise the sky colour, and stretch with a print-strength curve.
-Writes {Rn.NAME}_Print.jpg and {Rn.NAME}_Print_linear.tif (16-bit).
+and stretch with a print-strength curve of its own.
+Writes {Rn.NAME}_Print.jpg and .tif (16-bit sRGB).
 """
 import numpy as np, cv2
 from scipy import ndimage as ndi
@@ -26,9 +26,6 @@ for c in range(3):
     lin[c] -= 0.8 * corr * soft_full
     print(f"ch{c}: background range {(smooth[msub>0].max()-smooth[msub>0].min())*65535:.1f} ADU")
 
-core = mask
-for c in (0, 2):                                            # neutral sky: R and B medians onto G
-    lin[c] += np.median(lin[1][core]) - np.median(lin[c][core])
-tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=core[::7, ::7], path=f"{W}/tone_print.json")
-Rn.save_still("Print", tone.apply(lin), lin, box=(0, lin.shape[1], 0, lin.shape[2]))
+tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=mask[::7, ::7], path=f"{W}/tone_print.json")
+Rn.save_still("Print", tone, lin, box=(0, lin.shape[1], 0, lin.shape[2]))
 print("done")

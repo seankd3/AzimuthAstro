@@ -93,4 +93,6 @@ fitted distortion leaves at the edges.
 
 ## Credits
 
+Colour: the frames stay in the camera's own RGB until the shared tone curve, which white-balances on the sky background itself, then applies the camera-to-sRGB matrix read from the raw file (`cam_to_srgb` in `project.json`). Both halves matter: without the matrix a stacked sky goes magenta, and with the as-shot balance (chosen for warm light on the ground) 6000 K starlight and the whole sky with it go violet.
+
 `sky_data/` holds the star, constellation and deep-sky catalogues of [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3), used for the annotated frame. `lensfun-mil-canon.xml` is an extract of the [lensfun](https://lensfun.github.io/) database (CC BY-SA 3.0), edited to database version 1 for lensfunpy.

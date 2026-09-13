@@ -13,6 +13,7 @@ project.json:
   astap_center    (RA, Dec) degrees of the frame centre from an ASTAP crop solve (for solve.py)
   date            ISO UTC of mid-session
   wb              as-shot RGGB multipliers R, G, B (G = 1024)
+  cam_to_srgb     3x3 taking white-balanced camera RGB to linear sRGB (rows sum to 1)
   lens, focal     EXIF LensModel and focal length in mm (lensfun distortion profile)
   crop            35 mm crop factor of the sensor (focal length in pixels)
 """
@@ -35,6 +36,7 @@ ASTAP_CENTER = tuple(_cfg.get("astap_center", (0.0, 0.0)))
 ASTAP_SCALE = float(_cfg.get("astap_scale", 0.0))           # deg/px of the stack at its centre, from the ASTAP crop solve
 DATE = _cfg.get("date", "2000-01-01T00:00:00")
 WB = tuple(_cfg.get("wb", (1659, 1024, 2378)))
+CAM_TO_SRGB = _cfg.get("cam_to_srgb") or [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 LENS = _cfg.get("lens", "RF16mm F2.8 STM")
 FOCAL = float(_cfg.get("focal", 16.0))
 CROP = float(_cfg.get("crop", 1.0))          # 35 mm crop factor

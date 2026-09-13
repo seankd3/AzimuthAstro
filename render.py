@@ -16,6 +16,7 @@ NAME = R.P.NAME
 WIDTH, HEIGHT = R.WIDTH, R.HEIGHT
 BLACK = 2047.0 / 65535.0
 WB = np.array(R.P.WB, np.float32) / 1024.0
+CAM = np.array(R.P.CAM_TO_SRGB, np.float32)      # white-balanced camera RGB -> linear sRGB
 _m = np.load(f"{W}/model.npz")
 K1, K2, FPX, POLE = float(_m["k1"]), float(_m["k2"]), float(_m["f"]), tuple(_m["pole"])
 H_FRAME = _m["H"]                       # index 1..90 (odd CR3 frames), d-space, frame -> reference
@@ -148,7 +149,8 @@ def star_layer(sky, valid=None, count=None, k=3.0, full=60.0):
     is_star = (ratio.max(axis=0) > 1.0) & (ratio.min(axis=0) > 0.35)   # broadband point, not one-channel noise
     if count is not None:
         is_star &= count >= 8                              # too few frames: background steps masquerade as stars
-    stars = np.where(is_star[None], np.clip(d, 0, None), 0)
+    stars = np.where(is_star[None], np.clip(d - thr, 0, None), 0)   # what stands above the noise, not the whole residual:
+                                                                    # kept in full, a 4-sigma noise floor accumulates into a magenta wash
     stars[:, ~valid] = 0
     return stars, bg
 
@@ -182,34 +184,42 @@ def compose(layer, bg, ground, mask, resid, valid, shrink=0, feather=1):
 
 
 class Tone:
-    """One fixed tone curve for every still and every video frame: linear signal -> 8-bit sRGB-ish."""
+    """One fixed tone curve for every still and every video frame: linear signal -> sRGB.
+
+    The night sky is the grey card. The as-shot white balance was chosen for the warm light on the
+    ground, so under it 6000 K starlight renders violet and the whole sky with it; the balance that
+    belongs to a nightscape is the one that makes the sky background neutral, and `fit` measures it.
+    """
     path = f"{W}/tone.json"
 
-    def __init__(self, black=None, white=None, a=None):
+    def __init__(self, black=None, white=None, a=None, wb=None):
         if black is None:
             p = json.load(open(self.path))
-            black, white, a = p["black"], p["white"], p["a"]
+            black, white, a, wb = p["black"], p["white"], p["a"], p.get("wb")
         self.black, self.white, self.a = np.array(black, np.float32), np.array(white, np.float32), a
+        self.wb = np.array(wb if wb is not None else WB / WB[1], np.float32)
 
     @classmethod
     def fit(cls, lin, a=60.0, lo=0.2, sky_target=0.16, sky_mask=None, path=None):
-        """lin: (3,H,W) black-subtracted linear signal. Black at a low percentile; white chosen so the
-        sky background lands at `sky_target` of the output range."""
+        """lin: (3,H,W) black-subtracted linear signal. Black at a low percentile; the white balance from
+        the sky background; white so that background lands at `sky_target` of the output range."""
         black = np.array([np.percentile(lin[c][::7, ::7], lo) for c in range(3)], np.float32)
-        g = lin[1][::7, ::7]
-        g = g if sky_mask is None else g[sky_mask]
-        sky = float(np.median(g)) - black[1]
-        x_sky = np.sinh(sky_target * np.arcsinh(a)) / a
-        white = sky / x_sky
-        t = cls(black.tolist(), [white] * 3, a)
-        json.dump({"black": black.tolist(), "white": [white] * 3, "a": a}, open(path or cls.path, "w"))
-        return t
+        s = lin[:, ::7, ::7] - black[:, None, None]
+        s = s[:, sky_mask] if sky_mask is not None else s.reshape(3, -1)
+        sky = np.median(s, axis=1)
+        wb = float(sky[1]) / np.maximum(sky, 1e-9)
+        white = float(sky[1]) / (np.sinh(sky_target * np.arcsinh(a)) / a)
+        p = {"black": black.tolist(), "white": [white] * 3, "a": a, "wb": wb.tolist()}
+        json.dump(p, open(path or cls.path, "w"))
+        return cls(**p)
 
-    def apply(self, lin):
-        x = (lin - self.black[:, None, None]) * WB[:, None, None] / (self.white[:, None, None] * WB[1])
-        x = np.clip(x, 0, 1)
+    def apply(self, lin, bits=8):
+        """black-subtracted camera-space linear -> sRGB, 8 or 16 bit."""
+        x = (lin - self.black[:, None, None]) * self.wb[:, None, None] / self.white[:, None, None]
+        x = np.clip(np.einsum("ij,jhw->ihw", CAM, x, optimize=True), 0, 1)     # camera RGB is not sRGB: the sky goes purple without this
         y = np.arcsinh(self.a * x) / np.arcsinh(self.a)
-        return (np.clip(y, 0, 1) ** (1 / 1.15) * 255).astype(np.uint8)
+        peak, dt = (255, np.uint8) if bits == 8 else (65535, np.uint16)
+        return (np.clip(y, 0, 1) ** (1 / 1.15) * peak).astype(dt)
 
 
 def to_display(img8):
@@ -236,13 +246,10 @@ def crop(a, box=None):
     return a[..., r0:r1, c0:c1]
 
 
-def save_still(name, img8, lin=None, box=None):
-    """{NAME}_{name}.jpg from an 8-bit (3,H,W) image and, when lin is given, a 16-bit linear TIFF with the
-    as-shot white balance, both cropped to the data footprint."""
+def save_still(name, tone, lin, box=None):
+    """{NAME}_{name}.jpg and .tif: the same sRGB image at 8 and 16 bits, cropped to the data footprint."""
     import tifffile
     from PIL import Image
-    box = box or footprint()
-    Image.fromarray(to_display(crop(img8, box))).save(f"{W}/{NAME}_{name}.jpg", quality=94)
-    if lin is not None:
-        lin16 = np.clip(crop(lin, box) * 65535.0 * 4.0 * WB[:, None, None], 0, 65535).astype(np.uint16)
-        tifffile.imwrite(f"{W}/{NAME}_{name}.tif", np.moveaxis(lin16, 0, -1)[::-1], photometric="rgb", compression="zlib")
+    lin = crop(lin, box or footprint())
+    Image.fromarray(to_display(tone.apply(lin))).save(f"{W}/{NAME}_{name}.jpg", quality=94)
+    tifffile.imwrite(f"{W}/{NAME}_{name}.tif", to_display(tone.apply(lin, bits=16)), photometric="rgb", compression="zlib")

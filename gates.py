@@ -100,6 +100,20 @@ def tone():
     return ratio > 0.7, f"stars: stack {a}, composite {b} ({ratio:.2f} of stack; {'ok' if ratio > 0.7 else 'STARS LOST in compose'})"
 
 
+def colour():
+    """the delivered sky is neutral: the tone curve balances on the sky and carries camera RGB to sRGB."""
+    from PIL import Image
+    import glob as _g
+    out = sorted(_g.glob(f"{W}/{P.NAME}_Print.jpg")) or sorted(_g.glob(f"{W}/{P.NAME}_*.jpg"))
+    if not out:
+        return True, "no stills yet"
+    a = np.asarray(Image.open(out[0]))[::8, ::8].astype(np.float32)
+    m = np.median(a[: a.shape[0] * 3 // 10].reshape(-1, 3), axis=0)
+    rg, bg = m[0] / max(m[1], 1e-6), m[2] / max(m[1], 1e-6)
+    ok = 0.8 < rg < 1.25 and 0.8 < bg < 1.25
+    return ok, f"{os.path.basename(out[0])} sky R/G {rg:.2f} B/G {bg:.2f} ({'ok' if ok else 'COLOUR CAST'})"
+
+
 def trails():
     g = np.load(f"{W}/trails_gapless.npy", mmap_mode="r")[1]
     m = np.load(f"{W}/mask_sky_d.npy")
@@ -107,7 +121,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "warp": warp, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "warp": warp, "print": colour, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):
