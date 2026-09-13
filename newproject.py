@@ -24,6 +24,14 @@ w, h = int(rows[0][5]) - 1, int(rows[0][6]) - 1    # Siril drops the last row/co
 if "90" in orient or "270" in orient:
     w, h = h, w
 wb = [int(x) for x in rows[0][4].split()]
+def daylight_wb(path):
+    """the camera's own daylight multipliers, normalised to green."""
+    import rawpy
+    with rawpy.imread(path) as r:
+        d = np.array(r.daylight_whitebalance[:3], float)
+    return (d / d[1]).tolist()
+
+
 def cam_to_srgb(path):
     """3x3 taking this camera's white-balanced RGB to linear sRGB, from the raw file's own colour matrix.
     Rows are normalised to sum 1, so a neutral stays neutral (dcraw's convention)."""
@@ -43,7 +51,7 @@ cfg = {"name": name, "width": w, "height": h, "frame_ids": list(range(1, len(sel
        "sky_rows": int(opts.get("--skyrows", h // 2)), "orientation": orient, "wb": [wb[0], wb[1], wb[3]],
        "date": datetime.datetime.utcfromtimestamp(ts[ref - 1]).strftime("%Y-%m-%dT%H:%M:%S"),
        "lens": rows[0][7], "focal": float(rows[0][8].split()[0]), "crop": float(rows[0][9] or 1.0),
-       "cam_to_srgb": cam_to_srgb(sel[0]),
+       "cam_to_srgb": cam_to_srgb(sel[0]), "daylight_wb": daylight_wb(sel[0]),
        "source_folder": folder, "sources": [os.path.basename(f) for f in sel]}
 os.makedirs(work, exist_ok=True)
 json.dump(cfg, open(os.path.join(work, "project.json"), "w"), indent=1)

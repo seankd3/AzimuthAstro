@@ -17,6 +17,7 @@ WIDTH, HEIGHT = R.WIDTH, R.HEIGHT
 BLACK = 2047.0 / 65535.0
 WB = np.array(R.P.WB, np.float32) / 1024.0
 CAM = np.array(R.P.CAM_TO_SRGB, np.float32)      # white-balanced camera RGB -> linear sRGB
+DAY = np.array(R.P.DAYLIGHT_WB, np.float32)      # the balance real light is rendered under
 _m = np.load(f"{W}/model.npz")
 K1, K2, FPX, POLE = float(_m["k1"]), float(_m["k2"]), float(_m["f"]), tuple(_m["pole"])
 H_FRAME = _m["H"]                       # index 1..90 (odd CR3 frames), d-space, frame -> reference
@@ -186,9 +187,11 @@ def compose(layer, bg, ground, mask, resid, valid, shrink=0, feather=1):
 class Tone:
     """One fixed tone curve for every still and every video frame: linear signal -> sRGB.
 
-    The night sky is the grey card. The as-shot white balance was chosen for the warm light on the
-    ground, so under it 6000 K starlight renders violet and the whole sky with it; the balance that
-    belongs to a nightscape is the one that makes the sky background neutral, and `fit` measures it.
+    Airglow and light pollution are emissions laid over the scene, so the sky's own colour comes off
+    as a per-channel black point, not as a white balance; what is left is real light and is rendered
+    under the camera's daylight balance. Under the as-shot balance (chosen for the warm light on the
+    ground) 6000 K starlight renders violet, and balancing on the sky instead divides out its green
+    airglow, which turns every star magenta.
     """
     path = f"{W}/tone.json"
 
@@ -197,19 +200,18 @@ class Tone:
             p = json.load(open(self.path))
             black, white, a, wb = p["black"], p["white"], p["a"], p.get("wb")
         self.black, self.white, self.a = np.array(black, np.float32), np.array(white, np.float32), a
-        self.wb = np.array(wb if wb is not None else WB / WB[1], np.float32)
+        self.wb = np.array(wb if wb is not None else DAY, np.float32)
 
     @classmethod
-    def fit(cls, lin, a=60.0, lo=0.2, sky_target=0.16, sky_mask=None, path=None):
-        """lin: (3,H,W) black-subtracted linear signal. Black at a low percentile; the white balance from
-        the sky background; white so that background lands at `sky_target` of the output range."""
-        black = np.array([np.percentile(lin[c][::7, ::7], lo) for c in range(3)], np.float32)
-        s = lin[:, ::7, ::7] - black[:, None, None]
+    def fit(cls, lin, a=60.0, sky_target=0.16, sky_mask=None, path=None):
+        """lin: (3,H,W) linear camera signal. The black point is the sky background, offset per channel so
+        that the sky itself lands neutral at `sky_target` of the output range under the daylight balance."""
+        s = lin[:, ::7, ::7]
         s = s[:, sky_mask] if sky_mask is not None else s.reshape(3, -1)
         sky = np.median(s, axis=1)
-        wb = float(sky[1]) / np.maximum(sky, 1e-9)
         white = float(sky[1]) / (np.sinh(sky_target * np.arcsinh(a)) / a)
-        p = {"black": black.tolist(), "white": [white] * 3, "a": a, "wb": wb.tolist()}
+        black = sky - float(sky[1]) / DAY
+        p = {"black": black.tolist(), "white": [white] * 3, "a": a, "wb": DAY.tolist()}
         json.dump(p, open(path or cls.path, "w"))
         return cls(**p)
 

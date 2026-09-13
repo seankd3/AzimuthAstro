@@ -9,6 +9,7 @@ tone = Rn.Tone()
 box = Rn.footprint()
 for name in ("gapless", "comet"):
     tr = np.load(f"{W}/trails_{name}.npy")
+    tr = np.clip(tr - Rn.large_scale(tr, mask), 0, None)      # a trail still shows the trails, not the glow they pile into
     lin = Rn.compose(tr, bg, ground, mask, resid, valid)
     Rn.save_still(f"Trails_{name}", tone, lin, box)
     print("wrote", name)
