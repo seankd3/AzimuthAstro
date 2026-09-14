@@ -6,6 +6,8 @@ __pycache__/
 *.npz
 *.tif
 *.jpg
+# the two README previews are Sean's own frames, kept on purpose
+!docs/*.jpg
 *.png
 *.mp4
 *.log

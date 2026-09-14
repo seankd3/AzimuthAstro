@@ -78,7 +78,7 @@ session half-patched.
 
 ## Read before changing anything
 
-`docs/` is not written yet; the reasoning that produced each stage lives in the module docstrings.
+The reasoning that produced each stage lives in the module docstrings.
 The things that bit hardest: Siril's own registration cannot handle a 16 mm field beyond ±5°
 (and its convert rewrote every rotated frame, 48 minutes a night, which is why LibRaw replaced it);
 zero pixels are no-data to the rejection stacking; the aligned stack smears the horizon glow
