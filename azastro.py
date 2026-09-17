@@ -95,7 +95,7 @@ def run(args):
 
     if args.detach:                                                      # survive the terminal: relaunch ourselves detached
         cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--from", args.frm] if args.frm else []) + (["--force"] if args.force else []) + (["--stills"] if args.stills else []) + (["--videos"] if args.videos else [])
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         with open(os.path.join(W, "run_detached.log"), "a") as lf:
             proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
         print(f"detached pid {proc.pid}; follow with: azastro status {args.workdir}")
