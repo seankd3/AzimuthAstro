@@ -26,6 +26,6 @@ for c in range(3):
     lin[c] -= 0.8 * corr * soft_full
     print(f"ch{c}: background range {(smooth[msub>0].max()-smooth[msub>0].min())*65535:.1f} ADU")
 
-tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=mask[::7, ::7], path=f"{W}/tone_print.json")
+tone = Rn.Tone.fit(lin, a=110.0, sky_target=0.20, sky_mask=mask[::7, ::7], path=f"{W}/tone_print.json", white_ref=Rn.star_white())
 Rn.save_still("Print", tone, lin, box=(0, lin.shape[1], 0, lin.shape[2]))
 print("done")

@@ -97,7 +97,7 @@ def run(args):
         cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--from", args.frm] if args.frm else []) + (["--force"] if args.force else []) + (["--stills"] if args.stills else []) + (["--videos"] if args.videos else [])
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         with open(os.path.join(W, "run_detached.log"), "a") as lf:
-            proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
+            proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
         print(f"detached pid {proc.pid}; follow with: azastro status {args.workdir}")
         return
     lock = os.path.join(W, "chain.pid")                                 # one chain per workdir: two would write the same files
@@ -227,10 +227,17 @@ def _progress(W, lines):
 def status(args):
     W = os.path.abspath(args.workdir)
     lines, running = _current(W)
+    frames = len(json.load(open(os.path.join(W, "project.json")))["frame_ids"]) if os.path.exists(os.path.join(W, "project.json")) else 100
+    remaining = _remaining(W, lines) if running else []
+    if getattr(args, "json", False):                                        # the shape a wrapper reads
+        gates = {l.split()[2].rstrip(":"): l.split(" ", 3)[3] if len(l.split(" ", 3)) > 3 else "" for l in lines if l.startswith("  gate ")}
+        state = "running" if running else "done" if any(l.startswith("DONE") for l in lines) else "failed" if any(l.startswith("FAIL") for l in lines) else "stopped"
+        print(json.dumps({"state": state, "stage": remaining[0] if remaining else None, "remaining": remaining,
+                          "eta": _eta(remaining, frames) if remaining else None, "gates": gates, "progress": _progress(W, lines).strip()}, indent=1))
+        return
     print("\n".join(lines) or "not started")
     if running:
-        frames = len(json.load(open(os.path.join(W, "project.json")))["frame_ids"])
-        print(_progress(W, lines)); print(f"  remaining: {' '.join(_remaining(W, lines))}; ETA {_eta(_remaining(W, lines), frames)}")
+        print(_progress(W, lines)); print(f"  remaining: {' '.join(remaining)}; ETA {_eta(remaining, frames)}")
     else:
         print("(not running)")
 
@@ -248,7 +255,7 @@ def wait(args):
         done = any(l.startswith("DONE") for l in new)
         failed = any(re.match(r"^FAIL [a-z]+ after [\d.]+ min$", l) for l in new)
         passed = args.stage and any(l.startswith("  gate ") and f" {args.stage}:" in l or (after and re.match(rf"^\d\d:\d\d {after}$", l)) for l in new)
-        if done or failed or passed or not running or time.time() - t0 > args.timeout:
+        if done or failed or passed or (not running and time.time() - t0 > 30) or time.time() - t0 > args.timeout:   # a detached run takes a few seconds to write chain.pid
             print("\n".join(new) or "(nothing new)")
             if running and not (done or failed or passed):
                 frames = len(json.load(open(os.path.join(W, "project.json")))["frame_ids"])
@@ -287,11 +294,11 @@ def main():
     p.add_argument("--detach", action="store_true", help="run in a detached process and return")
     p.add_argument("--stills", action="store_true", help="only the still outputs (tone .. print, export, deliver)")
     p.add_argument("--videos", action="store_true", help="only the videos (trails, timelapse, encode, deliver)")
-    p = sub.add_parser("status"); p.add_argument("workdir")
+    p = sub.add_parser("status"); p.add_argument("workdir"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("wait"); p.add_argument("workdir"); p.add_argument("--stage", choices=STAGES); p.add_argument("--timeout", type=float, default=540)
     p = sub.add_parser("stop"); p.add_argument("workdir")
     p = sub.add_parser("report"); p.add_argument("workdir")
-    p = sub.add_parser("probe"); p.add_argument("workdir")
+    p = sub.add_parser("probe"); p.add_argument("workdir"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("deliver"); p.add_argument("workdir")
     p = sub.add_parser("process", help="the whole night in one go: inspect, new --auto, run --detach")
     p.add_argument("workdir"); p.add_argument("name"); p.add_argument("folder"); p.add_argument("--mood-frame", type=int, default=1)
@@ -313,7 +320,7 @@ def main():
         stop(a)
     elif a.cmd in ("deliver", "report", "probe"):
         env = dict(os.environ, ASTRO_WORK=os.path.abspath(a.workdir).replace("\\", "/"))
-        subprocess.run([sys.executable, os.path.join(HERE, f"{a.cmd}.py")], env=env)
+        subprocess.run([sys.executable, os.path.join(HERE, f"{a.cmd}.py")] + (["--json"] if getattr(a, "json", False) else []), env=env)
 
 
 if __name__ == "__main__":

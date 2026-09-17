@@ -114,6 +114,26 @@ def colour():
     return ok, f"{os.path.basename(out[0])} sky R/G {rg:.2f} B/G {bg:.2f} ({'ok' if ok else 'COLOUR CAST'})"
 
 
+def export():
+    """the bright trails are not magenta: green clipping in single frames once made every dense trail core
+    lavender. Bright pixels of the gapless still must not have both R and B above G."""
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    p = f"{W}/{P.NAME}_Trails_gapless.jpg"
+    if not os.path.exists(p):
+        return False, "no trails still"
+    a = np.asarray(Image.open(p))[::6, ::6].astype(np.float32)
+    v = a[: a.shape[0] * 3 // 4].reshape(-1, 3)
+    bright = v[v.max(axis=1) > 140]
+    if len(bright) < 100:
+        return True, "too few bright trail pixels to judge"
+    m = np.median(bright, axis=0)
+    rg, bg = m[0] / max(m[1], 1e-6), m[2] / max(m[1], 1e-6)
+    magenta = min(rg, bg)
+    ok = magenta < 1.08
+    return ok, f"bright trails R/G {rg:.2f} B/G {bg:.2f} ({'ok' if ok else 'MAGENTA: clipped green'})"
+
+
 def trails():
     g = np.load(f"{W}/trails_gapless.npy", mmap_mode="r")[1]
     m = np.load(f"{W}/mask_sky_d.npy")
@@ -121,7 +141,7 @@ def trails():
     return frac > 0.5, f"trail layer covers {frac*100:.0f}% of the sky"
 
 
-GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "warp": warp, "print": colour, "encode": encode, "stack": stack, "tone": tone, "trails": trails}
+GATES = {"convert": convert, "hot": hot, "refine": refine, "clouds": clouds, "warp": warp, "print": colour, "encode": encode, "export": export, "stack": stack, "tone": tone, "trails": trails}
 
 
 def check(stage):

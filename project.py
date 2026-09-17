@@ -15,6 +15,7 @@ project.json:
   wb              as-shot RGGB multipliers R, G, B (G = 1024)
   cam_to_srgb     3x3 taking white-balanced camera RGB to linear sRGB (rows sum to 1)
   daylight_wb     the camera's own daylight multipliers, G = 1: what makes real light look real
+  clip            the sensor ceiling in frame units (white level / 65535): a sample there is not a measurement
   lens, focal     EXIF LensModel and focal length in mm (lensfun distortion profile)
   crop            35 mm crop factor of the sensor (focal length in pixels)
 """
@@ -39,6 +40,7 @@ DATE = _cfg.get("date", "2000-01-01T00:00:00")
 WB = tuple(_cfg.get("wb", (1659, 1024, 2378)))
 CAM_TO_SRGB = _cfg.get("cam_to_srgb") or [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 DAYLIGHT_WB = _cfg.get("daylight_wb") or [w / WB[1] for w in WB]
+CLIP = float(_cfg.get("clip", 1.0))
 LENS = _cfg.get("lens", "RF16mm F2.8 STM")
 FOCAL = float(_cfg.get("focal", 16.0))
 CROP = float(_cfg.get("crop", 1.0))          # 35 mm crop factor

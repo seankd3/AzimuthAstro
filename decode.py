@@ -45,6 +45,9 @@ if __name__ == "__main__":
             mn = d if mn is None else np.minimum(mn, d)
     mask = hot.find(mn)
     np.save(f"{P.W}/hot_mask.npy", mask[::-1])                                # FITS orientation, like the hot stage writes it
+    with rawpy.imread(os.path.join(cfg["source_folder"], cfg["sources"][0])) as r:
+        cfg["clip"] = float(r.white_level) / 65535.0                          # the ceiling every later stage must treat as no measurement
+    json.dump(cfg, open(f"{P.W}/project.json", "w"), indent=1)
     print("hot pixels", int(mask.sum()), flush=True)
     with Pool(workers, initializer=_init, initargs=(hot.neighbours(mask),)) as p:
         for i in p.imap_unordered(write, range(1, P.N + 1)):

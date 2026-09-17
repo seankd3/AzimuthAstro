@@ -19,7 +19,7 @@ a = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
 target = float(sys.argv[2]) if len(sys.argv) > 2 else 0.18
 core = mask & (sky[1] > 0)
 box = Rn.footprint()                                                       # statistics over data, not the empty wedges
-t = Rn.Tone.fit(Rn.crop(lin, box), a=a, sky_mask=Rn.crop(core, box)[::7, ::7], sky_target=target)
+t = Rn.Tone.fit(Rn.crop(lin, box), a=a, sky_mask=Rn.crop(core, box)[::7, ::7], sky_target=target, white_ref=Rn.star_white(stars))
 print("tone black", t.black * 65535, "white", t.white[0] * 65535, "a", a, "footprint", box)
 img = Rn.to_display(Rn.crop(t.apply(lin), box))
 Image.fromarray(img[::4, ::4]).save(f"{Rn.W}/preview_tone.jpg", quality=92)

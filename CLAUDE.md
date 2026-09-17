@@ -8,6 +8,9 @@ cost ~60 calls, looking at images ~20 reads at 1,500 tokens each, and ad-hoc Pyt
   per ~9 minutes at most; its exit-3 line carries an ETA, so sleep to the ETA instead of polling.
 - Every stage writes a `.done` marker and runs its gate; `azastro run --from S` redoes S onward,
   `--stills` re-renders only the stills after a colour or tone change, `--videos` only the videos.
+- Windows multiprocessing in a detached run can lose a worker respawn late in a stage (`DuplicateHandle:
+  Access is denied`, seen in register and three times in stack, with nothing else running). Pool stages
+  must finish dropped work in-process (stack.py does); do not blame a concurrent job.
 - `azastro stop <work>` kills the chain by its own pid tree. Never taskkill by a command-line regex
   (a stage name once matched `--to deliver` and killed the wrong chain).
 

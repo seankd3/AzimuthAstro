@@ -153,7 +153,29 @@ def star_layer(sky, valid=None, count=None, k=3.0, full=60.0):
     stars = np.where(is_star[None], np.clip(d - thr, 0, None), 0)   # what stands above the noise, not the whole residual:
                                                                     # kept in full, a 4-sigma noise floor accumulates into a magenta wash
     stars[:, ~valid] = 0
-    return stars, bg
+    return one_colour(stars), bg
+
+
+def star_white(stars=None):
+    """the integrated flux of the star layer over the sky: the camera-space colour of the average star."""
+    if stars is None:
+        stars = np.load(f"{W}/stars_layer.npy", mmap_mode="r")[:, ::5, ::5]
+    v = np.asarray(stars).reshape(3, -1)
+    on = v[1] > 0
+    return v[:, on].sum(axis=1) if on.any() else 1.0 / DAY
+
+
+def one_colour(stars, sigma=2.5):
+    """A star has one colour. Lateral chromatic aberration and the demosaic paint a bright core's halo red and
+    blue (R/G 0.67 in single frames against a daylight-neutral 0.46), and trails accumulate halos into a lavender
+    wash; so the layer keeps its luminance at full resolution and takes its colour from a blurred copy, which is
+    each star's flux-weighted colour."""
+    from scipy import ndimage as ndi
+    lum = stars.sum(axis=0)
+    blur = np.stack([ndi.gaussian_filter(c, sigma) for c in stars])
+    blum = ndi.gaussian_filter(lum, sigma)
+    ratio = blur / np.maximum(blum, 1e-12)[None]
+    return np.where(lum[None] > 0, lum[None] * ratio, 0).astype(np.float32)
 
 
 def backgrounds(sky, ground, mask, count, reach=400):
@@ -188,10 +210,10 @@ class Tone:
     """One fixed tone curve for every still and every video frame: linear signal -> sRGB.
 
     Airglow and light pollution are emissions laid over the scene, so the sky's own colour comes off
-    as a per-channel black point, not as a white balance; what is left is real light and is rendered
-    under the camera's daylight balance. Under the as-shot balance (chosen for the warm light on the
-    ground) 6000 K starlight renders violet, and balancing on the sky instead divides out its green
-    airglow, which turns every star magenta.
+    as a per-channel black point, not as a white balance. What is left is starlight, and the average
+    star defines white: the camera's daylight multipliers left B and A stars magenta (30% too much red
+    in point sources), the as-shot balance (chosen for the warm ground light) made every star violet,
+    and balancing on the sky divided out its green airglow, which did the same.
     """
     path = f"{W}/tone.json"
 
@@ -203,15 +225,17 @@ class Tone:
         self.wb = np.array(wb if wb is not None else DAY, np.float32)
 
     @classmethod
-    def fit(cls, lin, a=60.0, sky_target=0.16, sky_mask=None, path=None):
-        """lin: (3,H,W) linear camera signal. The black point is the sky background, offset per channel so
-        that the sky itself lands neutral at `sky_target` of the output range under the daylight balance."""
+    def fit(cls, lin, a=60.0, sky_target=0.16, sky_mask=None, path=None, white_ref=None):
+        """lin: (3,H,W) linear camera signal. `white_ref`: the camera-space colour that renders neutral (the
+        integrated star flux, see star_white); daylight when absent. The black point is the sky background,
+        offset per channel so the sky lands neutral at `sky_target` of the output range."""
         s = lin[:, ::7, ::7]
         s = s[:, sky_mask] if sky_mask is not None else s.reshape(3, -1)
         sky = np.median(s, axis=1)
+        wb = DAY if white_ref is None else np.float32(white_ref[1]) / np.maximum(np.asarray(white_ref, np.float32), 1e-12)
         white = float(sky[1]) / (np.sinh(sky_target * np.arcsinh(a)) / a)
-        black = sky - float(sky[1]) / DAY
-        p = {"black": black.tolist(), "white": [white] * 3, "a": a, "wb": DAY.tolist()}
+        black = sky - float(sky[1]) / wb
+        p = {"black": black.tolist(), "white": [white] * 3, "a": a, "wb": wb.tolist()}
         json.dump(p, open(path or cls.path, "w"))
         return cls(**p)
 
