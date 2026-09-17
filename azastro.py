@@ -3,11 +3,13 @@
   azastro inspect <cr3_folder>                 report the session: settings drift, cadence, fog/clouds, test frames
   azastro new <workdir> <name> <cr3_folder> [--first N --last M --skip a,b] [--pole x,y] [--skyrows r] [--auto]
   azastro run <workdir> [--from STAGE] [--to STAGE] [--mood-frame N] [--force] [--detach]
+  azastro run <workdir> --stills | --videos     re-render only the stills (after a colour/tone change) or only the videos
   azastro process <workdir> <name> <cr3_folder> [--mood-frame N]     inspect + new --auto + run --detach: a whole night
   azastro status <workdir>                     current run: stages, gates, last progress line
   azastro wait <workdir> [--stage S] [--timeout SEC]   block until stage S (or the run) ends; prints only what is new
   azastro stop <workdir>                       kill the running chain
   azastro report <workdir>                     numbers that decide a night (gates, fit, clouds, footprint, tone) + report.jpg
+  azastro probe <workdir>                      every number otherwise measured by hand: colour of sky/stars/trails, noise, coverage, each delivered file
   azastro deliver <workdir>
 
 `run` resumes at the first stage without a done marker; `run --from S` redoes S and everything after.
@@ -22,6 +24,9 @@ from session import inspect
 STAGES = ["convert", "hot", "ground", "mask", "refine", "clouds", "register", "fit", "warp", "stack",
           "tone", "astap", "annotate", "traffic", "mood", "print", "trails", "export", "timelapse", "encode", "deliver"]
 NONFATAL = {"annotate", "traffic", "mood", "print", "export", "timelapse", "encode", "deliver"}
+STILLS = ["tone", "astap", "annotate", "traffic", "mood", "print", "export", "deliver"]      # everything a colour or tone change touches
+VIDEOS = ["trails", "timelapse", "encode", "deliver"]
+TIMINGS = os.path.join(os.path.expanduser("~"), ".azastro", "timings.json")               # minutes per stage, every run ever: the ETA
 
 
 # ----------------------------------------------------------------------------- new / run / status / deliver
@@ -81,14 +86,15 @@ def run(args):
     cfg = json.load(open(os.path.join(W, "project.json")))
     gpu = has_cuda()
     log = open(os.path.join(W, "chain.log"), "a")
-    redo = args.frm is not None or args.force                           # --from S: S and everything after is redone
+    redo = args.frm is not None or args.force or args.stills or args.videos   # --from S: S and everything after is redone
     i0, i1 = STAGES.index(args.frm or "convert"), STAGES.index(args.to)
+    stages = STILLS if args.stills else VIDEOS if args.videos else STAGES[i0:i1 + 1]
 
     def py(name, *a):
         return [sys.executable, os.path.join(HERE, name), *a]
 
     if args.detach:                                                      # survive the terminal: relaunch ourselves detached
-        cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--from", args.frm] if args.frm else []) + (["--force"] if args.force else [])
+        cmd = [sys.executable, os.path.abspath(__file__), "run", W, "--to", args.to, "--mood-frame", str(args.mood_frame)] + (["--from", args.frm] if args.frm else []) + (["--force"] if args.force else []) + (["--stills"] if args.stills else []) + (["--videos"] if args.videos else [])
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         with open(os.path.join(W, "run_detached.log"), "a") as lf:
             proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
@@ -100,8 +106,8 @@ def run(args):
     open(lock, "w").write(str(os.getpid()))
     import atexit; atexit.register(lambda: os.path.exists(lock) and os.remove(lock))
     done_dir = os.path.join(W, ".done"); os.makedirs(done_dir, exist_ok=True)
-    log.write(f"== run {time.strftime('%Y-%m-%d %H:%M')} from {STAGES[i0]} to {args.to}\n"); log.flush()
-    for st in STAGES[i0:i1 + 1]:
+    log.write(f"== run {time.strftime('%Y-%m-%d %H:%M')} {'stills' if args.stills else 'videos' if args.videos else 'from ' + STAGES[i0] + ' to ' + args.to}; ETA {_eta(stages)}\n"); log.flush()
+    for st in stages:
         marker = os.path.join(done_dir, st)
         if os.path.exists(marker) and not redo:
             print(f"{st:10s} done earlier, skipped")
@@ -146,9 +152,52 @@ def run(args):
         else:
             print(f"{st:10s} {mins:5.1f} min")
             open(marker, "w").write(time.strftime("%Y-%m-%d %H:%M"))
+            _record(st, mins, cfg.get("frame_ids", []))
     log.write("DONE\n"); log.close()
     subprocess.run(py("report.py"), env=env)
     print("done:", cfg["name"])
+
+
+def _record(stage, mins, frame_ids):
+    """minutes per stage per 100 frames, kept across every project: what the next ETA is made of."""
+    if os.environ.get("SMOKE"):                                              # a 12-frame synthetic night is not a night
+        return
+    os.makedirs(os.path.dirname(TIMINGS), exist_ok=True)
+    t = json.load(open(TIMINGS)) if os.path.exists(TIMINGS) else {}
+    t.setdefault(stage, []).append(round(mins * 100.0 / max(len(frame_ids), 1), 3))
+    t[stage] = t[stage][-20:]
+    json.dump(t, open(TIMINGS, "w"), indent=1)
+
+
+def _eta(stages, frames=None):
+    """'~HH:MM (N min)' for the stages still to run, from recorded stage times; '?' with no history."""
+    t = json.load(open(TIMINGS)) if os.path.exists(TIMINGS) else {}
+    if frames is None:
+        try:
+            frames = len(json.load(open(os.path.join(os.getcwd(), "project.json")))["frame_ids"])
+        except Exception:
+            frames = 100
+    known = [sorted(t[s])[len(t[s]) // 2] * frames / 100.0 for s in stages if s in t]
+    if not known:
+        return "?"
+    mins = sum(known)
+    return f"~{time.strftime('%H:%M', time.localtime(time.time() + mins * 60))} ({mins:.0f} min{'' if len(known) == len(stages) else ', some stages unmeasured'})"
+
+
+def _remaining(W, lines):
+    """stages the current run has not finished yet, from its header line and the stage lines so far."""
+    head = next((l for l in lines if l.startswith("== run")), "")
+    if " stills;" in head:
+        plan = STILLS
+    elif " videos;" in head:
+        plan = VIDEOS
+    else:
+        m = re.search(r"from (\w+) to (\w+)", head)
+        plan = STAGES[STAGES.index(m.group(1)):STAGES.index(m.group(2)) + 1] if m else STAGES
+    done = {l.split()[-1] for l in lines if re.match(r"^\d\d:\d\d [a-z]+$", l)}
+    started = [l.split()[-1] for l in lines if re.match(r"^\d\d:\d\d [a-z]+$", l)]
+    current = started[-1] if started else None
+    return [s for s in plan if s not in done or s == current]
 
 
 def _current(W):
@@ -179,7 +228,11 @@ def status(args):
     W = os.path.abspath(args.workdir)
     lines, running = _current(W)
     print("\n".join(lines) or "not started")
-    print(_progress(W, lines) if running else "(not running)")
+    if running:
+        frames = len(json.load(open(os.path.join(W, "project.json")))["frame_ids"])
+        print(_progress(W, lines)); print(f"  remaining: {' '.join(_remaining(W, lines))}; ETA {_eta(_remaining(W, lines), frames)}")
+    else:
+        print("(not running)")
 
 
 def wait(args):
@@ -198,7 +251,8 @@ def wait(args):
         if done or failed or passed or not running or time.time() - t0 > args.timeout:
             print("\n".join(new) or "(nothing new)")
             if running and not (done or failed or passed):
-                print(_progress(W, lines)); sys.exit(3)
+                frames = len(json.load(open(os.path.join(W, "project.json")))["frame_ids"])
+                print(_progress(W, lines)); print(f"  ETA {_eta(_remaining(W, lines), frames)}"); sys.exit(3)
             sys.exit(1 if failed or (not running and not done and not passed) else 0)
         time.sleep(15)
 
@@ -231,10 +285,13 @@ def main():
     p.add_argument("--to", default="deliver", choices=STAGES); p.add_argument("--mood-frame", type=int, default=1)
     p.add_argument("--force", action="store_true", help="redo stages that already have a done marker")
     p.add_argument("--detach", action="store_true", help="run in a detached process and return")
+    p.add_argument("--stills", action="store_true", help="only the still outputs (tone .. print, export, deliver)")
+    p.add_argument("--videos", action="store_true", help="only the videos (trails, timelapse, encode, deliver)")
     p = sub.add_parser("status"); p.add_argument("workdir")
     p = sub.add_parser("wait"); p.add_argument("workdir"); p.add_argument("--stage", choices=STAGES); p.add_argument("--timeout", type=float, default=540)
     p = sub.add_parser("stop"); p.add_argument("workdir")
     p = sub.add_parser("report"); p.add_argument("workdir")
+    p = sub.add_parser("probe"); p.add_argument("workdir")
     p = sub.add_parser("deliver"); p.add_argument("workdir")
     p = sub.add_parser("process", help="the whole night in one go: inspect, new --auto, run --detach")
     p.add_argument("workdir"); p.add_argument("name"); p.add_argument("folder"); p.add_argument("--mood-frame", type=int, default=1)
@@ -245,7 +302,7 @@ def main():
         new(a)
     elif a.cmd == "process":
         new(argparse.Namespace(workdir=a.workdir, name=a.name, folder=a.folder, first=None, last=None, skip="", pole=None, skyrows=None, auto=True))
-        run(argparse.Namespace(workdir=a.workdir, frm=None, to="deliver", mood_frame=a.mood_frame, force=False, detach=True))
+        run(argparse.Namespace(workdir=a.workdir, frm=None, to="deliver", mood_frame=a.mood_frame, force=False, detach=True, stills=False, videos=False))
     elif a.cmd == "run":
         run(a)
     elif a.cmd == "status":
@@ -254,7 +311,7 @@ def main():
         wait(a)
     elif a.cmd == "stop":
         stop(a)
-    elif a.cmd in ("deliver", "report"):
+    elif a.cmd in ("deliver", "report", "probe"):
         env = dict(os.environ, ASTRO_WORK=os.path.abspath(a.workdir).replace("\\", "/"))
         subprocess.run([sys.executable, os.path.join(HERE, f"{a.cmd}.py")], env=env)
 

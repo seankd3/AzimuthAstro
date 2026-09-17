@@ -129,7 +129,8 @@ def main(which):
                 d = Rn.downscale(cur[0].cpu().numpy(), 1 / q) - ground_q
                 d[:, ~sky_mask_q] = 0
                 layer = np.clip(np.stack([ndi.gaussian_filter(ndi.median_filter(c, 3), 1) for c in d]), 0, None)
-                layer = torch.from_numpy(np.stack([cv2.resize(c, (w, h), interpolation=cv2.INTER_CUBIC) for c in layer])).to(dev)
+                layer = torch.from_numpy(cv2.resize(layer[1], (w, h), interpolation=cv2.INTER_CUBIC)).to(dev)
+                layer = layer[None] / torch.tensor(Rn.DAY, device=dev)[:, None, None]   # where the cloud is, in grey: a residual's own colour is noise, and noise renders magenta
                 save("clouds", k_cloud, tg.apply(layer * 6 + tg.black + 0.0006)); k_cloud += 1
         prev = nxt
         if i % 10 == 0:
